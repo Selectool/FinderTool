@@ -25,6 +25,7 @@ FREE_REQUESTS_LIMIT = int(os.getenv("FREE_REQUESTS_LIMIT", "3"))
 
 # Сессия Telethon
 SESSION_NAME = os.getenv("SESSION_NAME", "bot_session")
+SESSION_STRING = os.getenv("SESSION_STRING", "")
 
 # Тексты бота
 TEXTS = {

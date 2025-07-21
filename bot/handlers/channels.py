@@ -8,7 +8,7 @@ from aiogram.filters import StateFilter
 
 from database.models import Database
 from services.channel_finder import ChannelFinder
-from config import API_ID, API_HASH, SESSION_NAME, FREE_REQUESTS_LIMIT, TEXTS
+from config import API_ID, API_HASH, SESSION_NAME, SESSION_STRING, FREE_REQUESTS_LIMIT, TEXTS
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,13 @@ async def get_channel_finder():
     """Получить экземпляр ChannelFinder"""
     global channel_finder
     if not channel_finder:
-        channel_finder = ChannelFinder(API_ID, API_HASH, SESSION_NAME)
+        # Приоритет: строковая сессия > файловая сессия
+        channel_finder = ChannelFinder(
+            API_ID,
+            API_HASH,
+            session_string=SESSION_STRING if SESSION_STRING else None,
+            session_name=SESSION_NAME
+        )
     return channel_finder
 
 

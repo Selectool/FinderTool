@@ -6,6 +6,7 @@ import re
 import asyncio
 from typing import List, Dict, Optional
 from telethon import TelegramClient, functions, types
+from telethon.sessions import StringSession
 from telethon.errors.rpcerrorlist import RpcCallFailError
 import logging
 
@@ -13,18 +14,27 @@ logger = logging.getLogger(__name__)
 
 
 class ChannelFinder:
-    def __init__(self, api_id: int, api_hash: str, session_name: str = "bot_session"):
+    def __init__(self, api_id: int, api_hash: str, session_string: str = None, session_name: str = "bot_session"):
         self.api_id = api_id
         self.api_hash = api_hash
+        self.session_string = session_string
         self.session_name = session_name
         self.client = None
 
     async def init_client(self):
         """Инициализация Telethon клиента"""
         if not self.client:
+            # Используем строковую сессию если доступна, иначе файловую
+            if self.session_string:
+                session = StringSession(self.session_string)
+                logger.info("Используется строковая сессия для production")
+            else:
+                session = self.session_name
+                logger.info(f"Используется файловая сессия: {self.session_name}")
+
             self.client = TelegramClient(
-                self.session_name, 
-                self.api_id, 
+                session,
+                self.api_id,
                 self.api_hash
             )
             await self.client.start()
