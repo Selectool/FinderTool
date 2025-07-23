@@ -1,0 +1,28 @@
+/* Базовые стили админ-панели */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #f8f9fa;
+}
+
+.sidebar {
+    background-color: #343a40;
+    min-height: 100vh;
+}
+
+.main-content {
+    padding: 20px;
+}
+
+.card {
+    border: none;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.btn-primary {
+    background-color: #007bff;
+    border-color: #007bff;
+}
+
+.navbar-brand {
+    font-weight: bold;
+}

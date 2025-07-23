@@ -110,8 +110,13 @@ async def handle_channel_search(message: Message, db: Database):
                 # Отправляем файл
                 csv_file = BufferedInputFile(csv_content, filename=filename)
 
-                await message.answer_document(
+                from bot.utils.error_handler import safe_send_document
+
+                success = await safe_send_document(
+                    bot=message.bot,
+                    user_id=user_id,
                     document=csv_file,
+                    db=db,
                     caption=f"📊 <b>Полный список найденных каналов</b>\n\n"
                            f"📈 Всего каналов: {results['total_found']}\n"
                            f"🔍 Методы поиска: {', '.join(results.get('search_methods_used', []))}\n"
@@ -120,7 +125,10 @@ async def handle_channel_search(message: Message, db: Database):
                     parse_mode="HTML"
                 )
 
-                logger.info(f"✅ CSV файл автоматически отправлен пользователю {user_id}")
+                if success:
+                    logger.info(f"✅ CSV файл автоматически отправлен пользователю {user_id}")
+                else:
+                    logger.warning(f"⚠️ Не удалось отправить CSV файл пользователю {user_id}")
 
             except Exception as csv_error:
                 logger.error(f"Ошибка при автоматической отправке CSV: {csv_error}")

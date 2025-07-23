@@ -31,6 +31,14 @@ env/
 .env
 .env.example
 
+#.md
+SETUP.md
+PRODUCTION_DEPLOYMENT.md
+ENTERPRISE_FEATURES.md
+ADMIN_USER_MANAGEMENT.md
+
+
+
 # Database
 *.db
 *.sqlite

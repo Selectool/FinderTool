@@ -1,0 +1,373 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+{% block page_title %}{{ page_title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .user-avatar-large {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #007bff, #0056b3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+        font-size: 2rem;
+        margin-bottom: 1rem;
+    }
+    
+    .stat-card {
+        background: white;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 1.5rem;
+        text-align: center;
+        margin-bottom: 1rem;
+        transition: transform 0.2s;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    
+    .stat-value {
+        font-size: 2rem;
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+    }
+    
+    .stat-label {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+    
+    .timeline-item {
+        border-left: 3px solid #007bff;
+        padding-left: 1rem;
+        margin-bottom: 1rem;
+        position: relative;
+    }
+    
+    .timeline-item::before {
+        content: '';
+        position: absolute;
+        left: -6px;
+        top: 0;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #007bff;
+    }
+    
+    .timeline-date {
+        color: #6c757d;
+        font-size: 0.85rem;
+    }
+    
+    .user-status-badge {
+        font-size: 0.9rem;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-weight: 500;
+    }
+    
+    .status-active { background: #d4edda; color: #155724; }
+    .status-subscribed { background: #d1ecf1; color: #0c5460; }
+    .status-blocked { background: #f8d7da; color: #721c24; }
+    .status-unlimited { background: #fff3cd; color: #856404; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Основная информация -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <div class="user-avatar-large mx-auto">
+                    {{ (user.first_name or user.username or 'U')[0]|upper }}
+                </div>
+                
+                <h4 class="card-title">
+                    {% if user.first_name or user.last_name %}
+                        {{ user.first_name or '' }} {{ user.last_name or '' }}
+                    {% else %}
+                        {{ user.username or 'Без имени' }}
+                    {% endif %}
+                </h4>
+                
+                <p class="text-muted">
+                    ID: {{ user.user_id }}
+                    {% if user.username %}• @{{ user.username }}{% endif %}
+                </p>
+                
+                <!-- Статус пользователя -->
+                <div class="mb-3">
+                    {% if user.blocked %}
+                        <span class="user-status-badge status-blocked">
+                            <i class="fas fa-ban me-1"></i>Заблокирован
+                        </span>
+                    {% elif user.unlimited_access %}
+                        <span class="user-status-badge status-unlimited">
+                            <i class="fas fa-infinity me-1"></i>Безлимитный доступ
+                        </span>
+                    {% elif user.is_subscribed %}
+                        <span class="user-status-badge status-subscribed">
+                            <i class="fas fa-crown me-1"></i>Подписчик
+                        </span>
+                    {% else %}
+                        <span class="user-status-badge status-active">
+                            <i class="fas fa-user me-1"></i>Обычный пользователь
+                        </span>
+                    {% endif %}
+                </div>
+                
+                <!-- Действия -->
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" onclick="manageSubscription()">
+                        <i class="fas fa-crown me-2"></i>Управление подпиской
+                    </button>
+                    <button class="btn btn-success" onclick="sendMessage()">
+                        <i class="fas fa-envelope me-2"></i>Отправить сообщение
+                    </button>
+                    {% if user.blocked %}
+                        <button class="btn btn-warning" onclick="unblockUser()">
+                            <i class="fas fa-unlock me-2"></i>Разблокировать
+                        </button>
+                    {% else %}
+                        <button class="btn btn-danger" onclick="blockUser()">
+                            <i class="fas fa-ban me-2"></i>Заблокировать
+                        </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Дополнительная информация -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Дополнительная информация
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="row mb-2">
+                    <div class="col-sm-6"><strong>Регистрация:</strong></div>
+                    <div class="col-sm-6">{{ user.created_at.strftime('%d.%m.%Y %H:%M') }}</div>
+                </div>
+                
+                {% if user.subscription_end %}
+                <div class="row mb-2">
+                    <div class="col-sm-6"><strong>Подписка до:</strong></div>
+                    <div class="col-sm-6">{{ user.subscription_end.strftime('%d.%m.%Y') }}</div>
+                </div>
+                {% endif %}
+                
+                {% if user.last_request %}
+                <div class="row mb-2">
+                    <div class="col-sm-6"><strong>Последний запрос:</strong></div>
+                    <div class="col-sm-6">{{ user.last_request.strftime('%d.%m.%Y %H:%M') }}</div>
+                </div>
+                {% endif %}
+                
+                {% if user.referrer_id %}
+                <div class="row mb-2">
+                    <div class="col-sm-6"><strong>Пригласил:</strong></div>
+                    <div class="col-sm-6">
+                        <a href="/users/{{ user.referrer_id }}">ID {{ user.referrer_id }}</a>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <div class="row mb-2">
+                    <div class="col-sm-6"><strong>Источник:</strong></div>
+                    <div class="col-sm-6">{{ user.registration_source or 'bot' }}</div>
+                </div>
+                
+                {% if user.notes %}
+                <div class="row">
+                    <div class="col-12">
+                        <strong>Заметки:</strong>
+                        <p class="mt-1 mb-0">{{ user.notes }}</p>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Статистика -->
+    <div class="col-md-8">
+        <div class="row">
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value text-primary">{{ stats.total_requests or 0 }}</div>
+                    <div class="stat-label">Всего запросов</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value text-success">{{ stats.requests_today or 0 }}</div>
+                    <div class="stat-label">Сегодня</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value text-info">{{ stats.requests_week or 0 }}</div>
+                    <div class="stat-label">За неделю</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value text-warning">{{ stats.requests_month or 0 }}</div>
+                    <div class="stat-label">За месяц</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- История запросов -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-history me-2"></i>История запросов
+                </h6>
+            </div>
+            <div class="card-body">
+                {% if requests_history %}
+                    <div class="timeline">
+                        {% for request in requests_history %}
+                        <div class="timeline-item">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6 class="mb-1">Поиск каналов</h6>
+                                    <p class="mb-1">
+                                        Запрос: {{ request.channels_input[:100] }}{% if request.channels_input|length > 100 %}...{% endif %}
+                                    </p>
+                                    <div class="timeline-date">
+                                        {{ request.created_at.strftime('%d.%m.%Y %H:%M') }}
+                                    </div>
+                                </div>
+                                <div>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="showRequestDetails({{ request.id }})">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    
+                    {% if requests_history|length >= 10 %}
+                    <div class="text-center mt-3">
+                        <button class="btn btn-outline-primary" onclick="loadMoreRequests()">
+                            <i class="fas fa-plus me-2"></i>Показать больше
+                        </button>
+                    </div>
+                    {% endif %}
+                {% else %}
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-inbox fa-3x mb-3"></i>
+                        <p>Пользователь еще не делал запросов</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальные окна будут добавлены позже -->
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const userId = {{ user.user_id }};
+
+// Управление подпиской
+function manageSubscription() {
+    // TODO: Показать модальное окно управления подпиской
+    console.log('Управление подпиской для пользователя:', userId);
+}
+
+// Отправка сообщения
+function sendMessage() {
+    // TODO: Показать модальное окно отправки сообщения
+    console.log('Отправка сообщения пользователю:', userId);
+}
+
+// Блокировка пользователя
+async function blockUser() {
+    if (!confirm('Вы уверены, что хотите заблокировать этого пользователя?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/users/bulk-action`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                user_ids: [userId],
+                action: 'block',
+                notes: 'Заблокирован через админ-панель'
+            })
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert('Ошибка при блокировке пользователя');
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка при блокировке пользователя');
+    }
+}
+
+// Разблокировка пользователя
+async function unblockUser() {
+    if (!confirm('Вы уверены, что хотите разблокировать этого пользователя?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/users/bulk-action`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                user_ids: [userId],
+                action: 'unblock',
+                notes: 'Разблокирован через админ-панель'
+            })
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert('Ошибка при разблокировке пользователя');
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка при разблокировке пользователя');
+    }
+}
+
+// Показать детали запроса
+function showRequestDetails(requestId) {
+    // TODO: Показать модальное окно с деталями запроса
+    console.log('Показать детали запроса:', requestId);
+}
+
+// Загрузить больше запросов
+function loadMoreRequests() {
+    // TODO: Загрузить дополнительные запросы через AJAX
+    console.log('Загрузить больше запросов для пользователя:', userId);
+}
+</script>
+{% endblock %}

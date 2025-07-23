@@ -147,16 +147,24 @@ async def confirm_broadcast(callback: CallbackQuery, state: FSMContext, db: Data
     # Рассылаем сообщения
     for user in users:
         try:
-            await callback.bot.send_message(
-                chat_id=user['user_id'],
+            from bot.utils.error_handler import safe_send_message
+
+            success = await safe_send_message(
+                bot=callback.bot,
+                user_id=user['user_id'],
                 text=broadcast_message,
+                db=db,
                 parse_mode="HTML"
             )
-            sent_count += 1
-            
+
+            if success:
+                sent_count += 1
+            else:
+                failed_count += 1
+
             # Небольшая задержка чтобы не превысить лимиты API
             await asyncio.sleep(0.05)
-            
+
         except Exception as e:
             failed_count += 1
             logger.error(f"Ошибка отправки пользователю {user['user_id']}: {e}")
