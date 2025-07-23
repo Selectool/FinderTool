@@ -56,6 +56,10 @@ async def main():
     dp.include_router(channels.router)
     dp.include_router(subscription.router)
     dp.include_router(admin.router)
+
+    # Подключение роутера разработчика
+    from bot.handlers import developer
+    dp.include_router(developer.router)
     
     logger.info("Роутеры подключены")
     

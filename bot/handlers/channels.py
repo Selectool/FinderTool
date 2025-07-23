@@ -1,15 +1,16 @@
 """
-Обработчики для поиска каналов
+Обработчики для поиска каналов - Enterprise Edition
 """
 import re
+import logging
+from datetime import datetime
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, BufferedInputFile
 from aiogram.filters import StateFilter
 
 from database.models import Database
 from services.channel_finder import ChannelFinder
 from config import API_ID, API_HASH, SESSION_NAME, SESSION_STRING, FREE_REQUESTS_LIMIT, TEXTS
-import logging
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -94,10 +95,43 @@ async def handle_channel_search(message: Message, db: Database):
             parse_mode="HTML",
             disable_web_page_preview=True
         )
+
+        # Автоматически отправляем CSV файл если есть результаты
+        if results['success'] and results['total_found'] > 0:
+            try:
+                # Генерируем Excel-совместимый CSV
+                csv_data = finder.generate_excel_compatible_csv(results)
+                csv_content = csv_data.getvalue()
+
+                # Создаем имя файла
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"telegram_channels_{timestamp}.csv"
+
+                # Отправляем файл
+                csv_file = BufferedInputFile(csv_content, filename=filename)
+
+                await message.answer_document(
+                    document=csv_file,
+                    caption=f"📊 <b>Полный список найденных каналов</b>\n\n"
+                           f"📈 Всего каналов: {results['total_found']}\n"
+                           f"🔍 Методы поиска: {', '.join(results.get('search_methods_used', []))}\n"
+                           f"👥 Минимум подписчиков: {results.get('min_subscribers_filter', 1000):,}\n"
+                           f"📅 Дата экспорта: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+                    parse_mode="HTML"
+                )
+
+                logger.info(f"✅ CSV файл автоматически отправлен пользователю {user_id}")
+
+            except Exception as csv_error:
+                logger.error(f"Ошибка при автоматической отправке CSV: {csv_error}")
+                # Если ошибка с CSV, не прерываем основной процесс
         
     except Exception as e:
         logger.error(f"Ошибка при поиске каналов: {e}")
         await processing_msg.edit_text(TEXTS["error"])
+
+
+
 
 
 @router.message(F.text)

@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 
 from database.models import Database
 from bot.keyboards.inline import get_main_menu, get_back_keyboard
-from config import TEXTS, SUBSCRIPTION_PRICE, FREE_REQUESTS_LIMIT
+from config import TEXTS, SUBSCRIPTION_PRICE, FREE_REQUESTS_LIMIT, DEVELOPER_IDS
 
 router = Router()
 
@@ -51,9 +51,11 @@ async def cmd_profile(message: Message, db: Database):
         await message.answer("❌ Пользователь не найден. Используйте /start")
         return
     
-    is_subscribed = await db.check_subscription(message.from_user.id)
+    user_id = message.from_user.id
+    is_developer = user_id in DEVELOPER_IDS
+    is_subscribed = await db.check_subscription(user_id)
     requests_left = max(0, FREE_REQUESTS_LIMIT - user_data['requests_used'])
-    
+
     profile_text = f"""
 👤 <b>Ваш профиль</b>
 
@@ -64,8 +66,10 @@ async def cmd_profile(message: Message, db: Database):
 📊 <b>Статистика:</b>
 🔍 Запросов использовано: {user_data['requests_used']}
 """
-    
-    if is_subscribed:
+
+    if is_developer:
+        profile_text += f"🔧 <b>Статус: РАЗРАБОТЧИК</b>\n💎 Безлимитный доступ ко всем функциям"
+    elif is_subscribed:
         profile_text += f"💎 Статус: Подписчик до {user_data['subscription_end'][:10]}"
     else:
         profile_text += f"🆓 Бесплатных запросов осталось: {requests_left}"
@@ -86,9 +90,11 @@ async def callback_profile(callback: CallbackQuery, db: Database):
         await callback.answer("❌ Пользователь не найден")
         return
     
-    is_subscribed = await db.check_subscription(callback.from_user.id)
+    user_id = callback.from_user.id
+    is_developer = user_id in DEVELOPER_IDS
+    is_subscribed = await db.check_subscription(user_id)
     requests_left = max(0, FREE_REQUESTS_LIMIT - user_data['requests_used'])
-    
+
     profile_text = f"""
 👤 <b>Ваш профиль</b>
 
@@ -99,8 +105,10 @@ async def callback_profile(callback: CallbackQuery, db: Database):
 📊 <b>Статистика:</b>
 🔍 Запросов использовано: {user_data['requests_used']}
 """
-    
-    if is_subscribed:
+
+    if is_developer:
+        profile_text += f"🔧 <b>Статус: РАЗРАБОТЧИК</b>\n💎 Безлимитный доступ ко всем функциям"
+    elif is_subscribed:
         profile_text += f"💎 Статус: Подписчик до {user_data['subscription_end'][:10]}"
     else:
         profile_text += f"🆓 Бесплатных запросов осталось: {requests_left}"

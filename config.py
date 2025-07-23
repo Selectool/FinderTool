@@ -19,6 +19,9 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///bot.db")
 # Админ настройки
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0"))
 
+# Разработчики (имеют безлимитный доступ)
+DEVELOPER_IDS = [5699315855]  # ID разработчика
+
 # Настройки подписки
 SUBSCRIPTION_PRICE = int(os.getenv("SUBSCRIPTION_PRICE", "500"))
 FREE_REQUESTS_LIMIT = int(os.getenv("FREE_REQUESTS_LIMIT", "3"))
