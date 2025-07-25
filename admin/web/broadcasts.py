@@ -29,20 +29,27 @@ async def get_db(request: Request) -> Database:
 @router.get("/", response_class=HTMLResponse)
 async def broadcasts_list(
     request: Request,
+    page: int = 1,
+    status: str = None,
     current_user: TokenData = Depends(require_auth),
     db: Database = Depends(get_db)
 ):
     """Страница списка рассылок"""
 
-    # Получаем список рассылок
-    broadcasts = await db.get_broadcasts_list()
+    # Получаем список рассылок с пагинацией
+    broadcasts_data = await db.get_broadcasts_paginated(page=page, per_page=20)
+
+    # Получаем статистику рассылок
+    broadcasts_stats = await db.get_broadcasts_stats()
 
     return templates.TemplateResponse(
         "broadcasts/list.html",
         {
             "request": request,
             "current_user": current_user,
-            "broadcasts": broadcasts,
+            "broadcasts": broadcasts_data["broadcasts"],
+            "pagination": broadcasts_data["pagination"],
+            "broadcasts_stats": broadcasts_stats,
             "page_title": "Массовые рассылки"
         }
     )
@@ -84,8 +91,8 @@ async def broadcast_detail(
     if not broadcast:
         raise HTTPException(status_code=404, detail="Рассылка не найдена")
 
-    # Получаем статистику рассылки
-    stats = await db.get_broadcast_stats(broadcast_id)
+    # Получаем детальную статистику рассылки
+    stats = await db.get_broadcast_detailed_stats(broadcast_id)
 
     return templates.TemplateResponse(
         "broadcasts/detail.html",
@@ -97,3 +104,64 @@ async def broadcast_detail(
             "page_title": f"Рассылка #{broadcast_id}"
         }
     )
+
+
+@router.get("/templates", response_class=HTMLResponse)
+async def templates_list(
+    request: Request,
+    current_user: TokenData = Depends(require_auth),
+    db: Database = Depends(get_db)
+):
+    """Страница списка шаблонов сообщений"""
+
+    # Получаем список шаблонов
+    templates_list = await db.get_message_templates()
+
+    return templates.TemplateResponse(
+        "broadcasts/templates.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "templates": templates_list,
+            "page_title": "Шаблоны сообщений"
+        }
+    )
+
+
+@router.get("/templates/create", response_class=HTMLResponse)
+async def create_template_page(
+    request: Request,
+    current_user: TokenData = Depends(require_auth),
+    db: Database = Depends(get_db)
+):
+    """Страница создания шаблона сообщения"""
+
+    return templates.TemplateResponse(
+        "broadcasts/template_create.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "page_title": "Создание шаблона"
+        }
+    )
+
+
+@router.post("/templates/create")
+async def create_template(
+    request: Request,
+    name: str = Form(...),
+    content: str = Form(...),
+    category: str = Form("general"),
+    current_user: TokenData = Depends(require_auth),
+    db: Database = Depends(get_db)
+):
+    """Создать шаблон сообщения"""
+
+    template_id = await db.create_message_template(
+        name=name,
+        content=content,
+        category=category,
+        created_by=current_user.user_id
+    )
+
+    return RedirectResponse(url="/broadcasts/templates", status_code=302)

@@ -140,6 +140,15 @@
                 <option value="new" {% if filters.filter_type == 'new' %}selected{% endif %}>
                     Новые (за неделю)
                 </option>
+                <option value="role_admin" {% if filters.filter_type == 'role_admin' %}selected{% endif %}>
+                    Администраторы
+                </option>
+                <option value="role_senior_admin" {% if filters.filter_type == 'role_senior_admin' %}selected{% endif %}>
+                    Старшие администраторы
+                </option>
+                <option value="role_developer" {% if filters.filter_type == 'role_developer' %}selected{% endif %}>
+                    Разработчики
+                </option>
             </select>
         </div>
         <div class="col-md-2">
@@ -211,11 +220,12 @@
                         <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
                     </th>
                     <th>Пользователь</th>
+                    <th>Роль</th>
                     <th>Статус</th>
                     <th>Запросы</th>
                     <th>Регистрация</th>
                     <th>Последняя активность</th>
-                    <th width="120">Действия</th>
+                    <th width="150">Действия</th>
                 </tr>
             </thead>
             <tbody>
@@ -242,6 +252,20 @@
                                     {% if user.username %}• @{{ user.username }}{% endif %}
                                 </small>
                             </div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="d-flex flex-column">
+                            {% set role_display = user.role|default('user') %}
+                            {% if role_display == 'developer' %}
+                                <span class="badge bg-primary">🔧 Разработчик</span>
+                            {% elif role_display == 'senior_admin' %}
+                                <span class="badge bg-warning text-dark">👑 Старший админ</span>
+                            {% elif role_display == 'admin' %}
+                                <span class="badge bg-info">🛡️ Администратор</span>
+                            {% else %}
+                                <span class="badge bg-secondary">👤 Пользователь</span>
+                            {% endif %}
                         </div>
                     </td>
                     <td>
@@ -299,6 +323,9 @@
                             <a href="/users/{{ user.user_id }}" class="btn btn-outline-primary" title="Просмотр">
                                 <i class="fas fa-eye"></i>
                             </a>
+                            <button class="btn btn-outline-info" onclick="changeUserRole({{ user.user_id }})" title="Изменить роль">
+                                <i class="fas fa-user-tag"></i>
+                            </button>
                             {% if user.blocked %}
                                 <button class="btn btn-outline-success" onclick="unblockUser({{ user.user_id }})" title="Разблокировать">
                                     <i class="fas fa-unlock"></i>
@@ -558,6 +585,125 @@ document.addEventListener('DOMContentLoaded', function() {
     // Инициальное обновление счетчика
     updateSelectedCount();
 });
+
+// Изменение роли пользователя
+async function changeUserRole(userId) {
+    try {
+        // Получаем информацию о пользователе и доступных ролях
+        const [userResponse, rolesResponse] = await Promise.all([
+            fetch(`/api/roles/user/${userId}`),
+            fetch('/api/roles/available')
+        ]);
+
+        if (!userResponse.ok || !rolesResponse.ok) {
+            alert('Ошибка получения данных о пользователе');
+            return;
+        }
+
+        const userInfo = await userResponse.json();
+        const availableRoles = await rolesResponse.json();
+
+        // Создаем модальное окно для выбора роли
+        let roleOptions = '';
+        availableRoles.forEach(role => {
+            const selected = role.value === userInfo.current_role ? 'selected' : '';
+            roleOptions += `<option value="${role.value}" ${selected}>${role.display_name}</option>`;
+        });
+
+        const modalHtml = `
+            <div class="modal fade" id="roleChangeModal" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Изменение роли пользователя</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <strong>Пользователь:</strong> ${userInfo.first_name || userInfo.username || 'Без имени'} (ID: ${userInfo.user_id})
+                            </div>
+                            <div class="mb-3">
+                                <strong>Текущая роль:</strong> ${userInfo.role_display_name}
+                            </div>
+                            <div class="mb-3">
+                                <label for="newRole" class="form-label">Новая роль:</label>
+                                <select class="form-select" id="newRole">
+                                    ${roleOptions}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label for="roleChangeReason" class="form-label">Причина изменения (необязательно):</label>
+                                <textarea class="form-control" id="roleChangeReason" rows="3"></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                            <button type="button" class="btn btn-primary" onclick="confirmRoleChange(${userId})">Изменить роль</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Удаляем предыдущее модальное окно, если есть
+        const existingModal = document.getElementById('roleChangeModal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        // Добавляем модальное окно в DOM
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+        // Показываем модальное окно
+        const modal = new bootstrap.Modal(document.getElementById('roleChangeModal'));
+        modal.show();
+
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка при получении данных о пользователе');
+    }
+}
+
+// Подтверждение изменения роли
+async function confirmRoleChange(userId) {
+    const newRole = document.getElementById('newRole').value;
+    const reason = document.getElementById('roleChangeReason').value;
+
+    if (!newRole) {
+        alert('Выберите новую роль');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/roles/change', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                user_id: userId,
+                new_role: newRole,
+                reason: reason
+            })
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            // Закрываем модальное окно
+            const modal = bootstrap.Modal.getInstance(document.getElementById('roleChangeModal'));
+            modal.hide();
+
+            // Перезагружаем страницу
+            location.reload();
+        } else {
+            alert('Ошибка: ' + (result.detail || 'Неизвестная ошибка'));
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка при изменении роли');
+    }
+}
 
 // Загружаем статистику при загрузке страницы
 document.addEventListener('DOMContentLoaded', loadStats);

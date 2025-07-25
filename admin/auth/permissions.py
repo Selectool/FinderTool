@@ -67,10 +67,10 @@ def require_permissions(permissions: List[str]):
 
 class PermissionChecker:
     """Класс для проверки разрешений как зависимость FastAPI"""
-    
+
     def __init__(self, required_permissions: List[str]):
         self.required_permissions = required_permissions
-    
+
     def __call__(self, current_user: TokenData = Depends(get_current_active_user)) -> TokenData:
         for permission in self.required_permissions:
             if not check_permission(current_user.role, permission):

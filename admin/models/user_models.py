@@ -186,3 +186,40 @@ class UserAnalyticsResponse(BaseModel):
     segments: List[UserSegmentResponse]
     growth_rate: float
     retention_rate: float
+
+
+class RoleChangeRequest(BaseModel):
+    """Запрос на изменение роли пользователя"""
+    user_id: int
+    new_role: str
+    reason: Optional[str] = None
+
+
+class BulkRoleChangeRequest(BaseModel):
+    """Запрос на массовое изменение ролей"""
+    user_ids: List[int]
+    new_role: str
+    reason: Optional[str] = None
+
+
+class RoleStatsResponse(BaseModel):
+    """Статистика по ролям"""
+    role: str
+    role_display_name: str
+    user_count: int
+    percentage: float
+
+
+class UserRoleInfo(BaseModel):
+    """Информация о роли пользователя"""
+    user_id: int
+    username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    current_role: str
+    role_display_name: str
+    can_change_to: List[str]  # Роли, на которые можно изменить
+    unlimited_access: bool
+    is_admin: bool
+    created_at: datetime
+    last_request: Optional[datetime] = None

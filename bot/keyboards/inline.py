@@ -38,7 +38,8 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast")
     )
     builder.row(
-        InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users")
+        InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users"),
+        InlineKeyboardButton(text="🎭 Роли", callback_data="roles_menu")
     )
     return builder.as_markup()
 

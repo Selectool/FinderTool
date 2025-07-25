@@ -10,6 +10,7 @@ from aiogram.enums import ParseMode
 from config import BOT_TOKEN, API_ID, API_HASH
 from database.models import Database
 from bot.middlewares.database import DatabaseMiddleware
+from bot.middlewares.role_middleware import RoleMiddleware
 from bot.handlers import basic, channels, subscription, admin
 
 # Настройка логирования
@@ -50,6 +51,10 @@ async def main():
     # Подключение middleware
     dp.message.middleware(DatabaseMiddleware(db))
     dp.callback_query.middleware(DatabaseMiddleware(db))
+
+    # Подключение middleware для ролей (после DatabaseMiddleware)
+    dp.message.middleware(RoleMiddleware())
+    dp.callback_query.middleware(RoleMiddleware())
     
     # Подключение роутеров
     dp.include_router(basic.router)
@@ -60,6 +65,10 @@ async def main():
     # Подключение роутера разработчика
     from bot.handlers import developer
     dp.include_router(developer.router)
+
+    # Подключение роутера управления ролями
+    from bot.handlers import role_management
+    dp.include_router(role_management.router)
     
     logger.info("Роутеры подключены")
     

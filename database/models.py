@@ -17,48 +17,56 @@ class Database:
     async def init_db(self):
         """Инициализация базы данных"""
         async with aiosqlite.connect(self.db_path) as db:
-            # Таблица пользователей
-            await db.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    user_id INTEGER PRIMARY KEY,
-                    username TEXT,
-                    first_name TEXT,
-                    last_name TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    requests_used INTEGER DEFAULT 0,
-                    is_subscribed BOOLEAN DEFAULT FALSE,
-                    subscription_end TIMESTAMP,
-                    last_request TIMESTAMP
-                )
+            # Проверяем, существуют ли основные таблицы
+            cursor = await db.execute("""
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name IN ('users', 'requests', 'broadcasts')
             """)
+            existing_tables = {row[0] for row in await cursor.fetchall()}
 
-            # Таблица запросов
-            await db.execute("""
-                CREATE TABLE IF NOT EXISTS requests (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER,
-                    channels_input TEXT,
-                    results TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users (user_id)
-                )
-            """)
+            # Создаем только отсутствующие таблицы
+            if 'users' not in existing_tables:
+                await db.execute("""
+                    CREATE TABLE users (
+                        user_id INTEGER PRIMARY KEY,
+                        username TEXT,
+                        first_name TEXT,
+                        last_name TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        requests_used INTEGER DEFAULT 0,
+                        is_subscribed BOOLEAN DEFAULT FALSE,
+                        subscription_end TIMESTAMP,
+                        last_request TIMESTAMP
+                    )
+                """)
 
-            # Таблица рассылок
-            await db.execute("""
-                CREATE TABLE IF NOT EXISTS broadcasts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    message_text TEXT,
-                    sent_count INTEGER DEFAULT 0,
-                    failed_count INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    completed BOOLEAN DEFAULT FALSE
-                )
-            """)
+            if 'requests' not in existing_tables:
+                await db.execute("""
+                    CREATE TABLE requests (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER,
+                        channels_input TEXT,
+                        results TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users (user_id)
+                    )
+                """)
+
+            if 'broadcasts' not in existing_tables:
+                await db.execute("""
+                    CREATE TABLE broadcasts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        message_text TEXT,
+                        sent_count INTEGER DEFAULT 0,
+                        failed_count INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        completed BOOLEAN DEFAULT FALSE
+                    )
+                """)
 
             await db.commit()
 
-        # Запускаем миграции для админ-панели
+        # Запускаем миграции для админ-панели только если нужно
         try:
             from .admin_migrations import run_admin_migrations
             await run_admin_migrations(self.db_path)
@@ -75,15 +83,21 @@ class Database:
             row = await cursor.fetchone()
             return dict(row) if row else None
 
-    async def create_user(self, user_id: int, username: str = None, 
-                         first_name: str = None, last_name: str = None):
+    async def create_user(self, user_id: int, username: str = None,
+                         first_name: str = None, last_name: str = None, role: str = None):
         """Создать пользователя"""
+        from bot.utils.roles import TelegramUserPermissions
+
+        # Определяем роль пользователя
+        if role is None:
+            role = TelegramUserPermissions.get_user_role(user_id)
+
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                INSERT OR REPLACE INTO users 
-                (user_id, username, first_name, last_name, created_at)
-                VALUES (?, ?, ?, ?, ?)
-            """, (user_id, username, first_name, last_name, datetime.now()))
+                INSERT OR REPLACE INTO users
+                (user_id, username, first_name, last_name, created_at, role)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (user_id, username, first_name, last_name, datetime.now(), role))
             await db.commit()
 
     async def update_user_requests(self, user_id: int):
@@ -120,6 +134,8 @@ class Database:
 
     async def can_make_request(self, user_id: int, free_limit: int = 3) -> bool:
         """Проверить, может ли пользователь сделать запрос"""
+        from bot.utils.roles import TelegramUserPermissions
+
         user = await self.get_user(user_id)
         if not user:
             return True  # Новый пользователь
@@ -131,6 +147,11 @@ class Database:
         # Проверяем, заблокировал ли пользователь бота
         if user.get('bot_blocked', False):
             return False
+
+        # Проверяем роль пользователя - администраторы имеют безлимитный доступ
+        user_role = user.get('role', 'user')
+        if TelegramUserPermissions.has_unlimited_access(user_id, user_role):
+            return True
 
         # Проверяем подписку
         if await self.check_subscription(user_id):
@@ -149,7 +170,7 @@ class Database:
             """, (user_id, json.dumps(channels_input), json.dumps(results)))
             await db.commit()
 
-    async def get_all_users(self) -> List[dict]:
+    async def get_all_users_for_broadcast(self) -> List[dict]:
         """Получить всех пользователей для рассылки"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
@@ -449,8 +470,8 @@ class Database:
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
                 INSERT INTO broadcasts
-                (message_text, template_id, parse_mode, target_users, created_by, scheduled_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (message_text, template_id, parse_mode, target_users, created_by, scheduled_at, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'pending')
             """, (message_text, template_id, parse_mode, target_users, created_by, scheduled_at))
             await db.commit()
             return cursor.lastrowid
@@ -477,12 +498,24 @@ class Database:
 
             broadcasts = [dict(row) for row in await cursor.fetchall()]
 
+            pages = (total + per_page - 1) // per_page
+
             return {
                 'broadcasts': broadcasts,
                 'total': total,
                 'page': page,
                 'per_page': per_page,
-                'pages': (total + per_page - 1) // per_page
+                'pages': pages,
+                'pagination': {
+                    'page': page,
+                    'per_page': per_page,
+                    'total': total,
+                    'pages': pages,
+                    'has_prev': page > 1,
+                    'has_next': page < pages,
+                    'prev_page': page - 1 if page > 1 else None,
+                    'next_page': page + 1 if page < pages else None
+                }
             }
 
     async def update_broadcast_stats(self, broadcast_id: int, sent_count: int = None,
@@ -523,6 +556,248 @@ class Database:
             """, params)
             await db.commit()
             return True
+
+    async def update_broadcast_status(self, broadcast_id: int, status: str) -> bool:
+        """Обновить статус рассылки"""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "UPDATE broadcasts SET status = ? WHERE id = ?",
+                (status, broadcast_id)
+            )
+            await db.commit()
+            return True
+
+    async def get_broadcast_target_users(self, broadcast_id: int) -> List[int]:
+        """Получить список пользователей для рассылки"""
+        broadcast = await self.get_broadcast_by_id(broadcast_id)
+        if not broadcast:
+            return []
+
+        target_type = broadcast.get("target_users", "all")
+
+        async with aiosqlite.connect(self.db_path) as db:
+            if target_type == "all":
+                cursor = await db.execute("SELECT user_id FROM users")
+            elif target_type == "subscribers":
+                cursor = await db.execute(
+                    "SELECT user_id FROM users WHERE is_subscribed = 1"
+                )
+            elif target_type == "active":
+                # Активные за последние 30 дней
+                thirty_days_ago = datetime.now() - timedelta(days=30)
+                cursor = await db.execute(
+                    "SELECT user_id FROM users WHERE last_request > ?",
+                    (thirty_days_ago,)
+                )
+            else:
+                # Для кастомных фильтров - пока возвращаем всех
+                cursor = await db.execute("SELECT user_id FROM users")
+
+            rows = await cursor.fetchall()
+            return [row[0] for row in rows]
+
+    async def log_broadcast_delivery(self, broadcast_id: int, user_id: int,
+                                   status: str, message: str = "", error_details: str = ""):
+        """Логировать доставку сообщения"""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                INSERT INTO broadcast_logs
+                (broadcast_id, user_id, status, message, error_details, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (broadcast_id, user_id, status, message, error_details, datetime.now()))
+            await db.commit()
+
+    async def get_broadcast_logs(self, broadcast_id: int, page: int = 1,
+                               per_page: int = 50, status: str = None) -> Dict[str, Any]:
+        """Получить логи рассылки с пагинацией"""
+        offset = (page - 1) * per_page
+
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+
+            # Подсчет общего количества
+            count_query = "SELECT COUNT(*) FROM broadcast_logs WHERE broadcast_id = ?"
+            count_params = [broadcast_id]
+
+            if status:
+                count_query += " AND status = ?"
+                count_params.append(status)
+
+            cursor = await db.execute(count_query, count_params)
+            total = (await cursor.fetchone())[0]
+
+            # Получение логов
+            logs_query = """
+                SELECT user_id, status, message, error_details, created_at
+                FROM broadcast_logs
+                WHERE broadcast_id = ?
+            """
+            logs_params = [broadcast_id]
+
+            if status:
+                logs_query += " AND status = ?"
+                logs_params.append(status)
+
+            logs_query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            logs_params.extend([per_page, offset])
+
+            cursor = await db.execute(logs_query, logs_params)
+            rows = await cursor.fetchall()
+
+            logs = [dict(row) for row in rows]
+
+            return {
+                "logs": logs,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total": total,
+                    "pages": (total + per_page - 1) // per_page,
+                    "has_prev": page > 1,
+                    "has_next": page * per_page < total,
+                    "prev_num": page - 1 if page > 1 else None,
+                    "next_num": page + 1 if page * per_page < total else None
+                }
+            }
+
+    async def get_all_broadcast_logs(self, broadcast_id: int) -> List[Dict[str, Any]]:
+        """Получить все логи рассылки для экспорта"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("""
+                SELECT user_id, status, message, error_details, created_at
+                FROM broadcast_logs
+                WHERE broadcast_id = ?
+                ORDER BY created_at DESC
+            """, (broadcast_id,))
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    async def get_target_audience_count(self, target_type: str) -> int:
+        """Получить количество пользователей в целевой аудитории"""
+        async with aiosqlite.connect(self.db_path) as db:
+            if target_type == "all":
+                cursor = await db.execute("SELECT COUNT(*) FROM users")
+            elif target_type == "subscribers":
+                cursor = await db.execute(
+                    "SELECT COUNT(*) FROM users WHERE is_subscribed = 1"
+                )
+            elif target_type == "active":
+                thirty_days_ago = datetime.now() - timedelta(days=30)
+                cursor = await db.execute(
+                    "SELECT COUNT(*) FROM users WHERE last_request > ?",
+                    (thirty_days_ago,)
+                )
+            else:
+                cursor = await db.execute("SELECT COUNT(*) FROM users")
+
+            result = await cursor.fetchone()
+            return result[0] if result else 0
+
+    async def get_broadcast_detailed_stats(self, broadcast_id: int) -> Dict[str, Any]:
+        """Получить детальную статистику рассылки"""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Статистика по статусам доставки
+            cursor = await db.execute("""
+                SELECT status, COUNT(*) as count
+                FROM broadcast_logs
+                WHERE broadcast_id = ?
+                GROUP BY status
+            """, (broadcast_id,))
+
+            status_stats = {}
+            for row in await cursor.fetchall():
+                status_stats[row[0]] = row[1]
+
+            # Общая информация о рассылке
+            broadcast = await self.get_broadcast_by_id(broadcast_id)
+
+            # Подсчет скорости отправки
+            current_rate = 0
+            if broadcast and broadcast.get("started_at"):
+                started_at = broadcast["started_at"]
+                if isinstance(started_at, str):
+                    started_at = datetime.fromisoformat(started_at)
+
+                elapsed_minutes = (datetime.now() - started_at).total_seconds() / 60
+                if elapsed_minutes > 0:
+                    sent_count = broadcast.get("sent_count", 0)
+                    current_rate = round(sent_count / elapsed_minutes, 1)
+
+            # Оценка оставшегося времени
+            estimated_time = ""
+            if broadcast and broadcast.get("status") == "sending":
+                total_recipients = await self.get_target_audience_count(
+                    broadcast.get("target_users", "all")
+                )
+                sent_count = broadcast.get("sent_count", 0)
+                remaining = total_recipients - sent_count
+
+                if current_rate > 0 and remaining > 0:
+                    remaining_minutes = remaining / current_rate
+                    if remaining_minutes < 60:
+                        estimated_time = f"{int(remaining_minutes)} мин"
+                    else:
+                        hours = int(remaining_minutes // 60)
+                        minutes = int(remaining_minutes % 60)
+                        estimated_time = f"{hours}ч {minutes}м"
+
+            return {
+                "delivered": status_stats.get("sent", 0),
+                "failed": status_stats.get("failed", 0),
+                "blocked": status_stats.get("blocked", 0),
+                "total_recipients": await self.get_target_audience_count(
+                    broadcast.get("target_users", "all") if broadcast else "all"
+                ),
+                "current_rate": current_rate,
+                "estimated_time": estimated_time
+            }
+
+    async def get_broadcasts_stats(self) -> Dict[str, int]:
+        """Получить общую статистику рассылок"""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Подсчет по статусам
+            cursor = await db.execute("""
+                SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+                    SUM(CASE WHEN status = 'sending' THEN 1 ELSE 0 END) as sending,
+                    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+                FROM broadcasts
+            """)
+
+            row = await cursor.fetchone()
+            if row:
+                return {
+                    "total": row[0] or 0,
+                    "completed": row[1] or 0,
+                    "sending": row[2] or 0,
+                    "pending": row[3] or 0,
+                    "failed": row[4] or 0
+                }
+
+            return {
+                "total": 0,
+                "completed": 0,
+                "sending": 0,
+                "pending": 0,
+                "failed": 0
+            }
+
+    async def get_broadcasts_list(self) -> List[Dict[str, Any]]:
+        """Получить список всех рассылок (устаревший метод)"""
+        data = await self.get_broadcasts_paginated(page=1, per_page=1000)
+        return data["broadcasts"]
+
+    async def update_user_bot_blocked_status(self, user_id: int, blocked: bool):
+        """Обновить статус блокировки пользователем бота"""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                UPDATE users SET bot_blocked = ?, blocked_at = ?
+                WHERE user_id = ?
+            """, (blocked, datetime.now() if blocked else None, user_id))
+            await db.commit()
 
     # ========== ЛОГИРОВАНИЕ ==========
 
@@ -670,4 +945,135 @@ class Database:
                 ORDER BY date
             """.format(days, days))
 
+            return [dict(row) for row in await cursor.fetchall()]
+
+    # Методы для работы с аудиторией рассылок
+    async def get_users_count(self) -> int:
+        """Получить общее количество пользователей"""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("SELECT COUNT(*) FROM users")
+            return (await cursor.fetchone())[0]
+
+    async def get_active_users_count(self) -> int:
+        """Получить количество активных пользователей (за последние 30 дней)"""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM users WHERE last_request > datetime('now', '-30 days')"
+            )
+            return (await cursor.fetchone())[0]
+
+    async def get_subscribers_count(self) -> int:
+        """Получить количество подписчиков"""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM users WHERE is_subscribed = 1 AND subscription_end > datetime('now')"
+            )
+            return (await cursor.fetchone())[0]
+
+    async def get_blocked_users_count(self) -> int:
+        """Получить количество заблокированных пользователей"""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM users WHERE bot_blocked = 1"
+            )
+            return (await cursor.fetchone())[0]
+
+    async def get_all_users(self, limit: int = 50) -> List[dict]:
+        """Получить список всех пользователей"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT user_id, first_name, last_name, username, created_at FROM users ORDER BY created_at DESC LIMIT ?",
+                (limit,)
+            )
+            return [dict(row) for row in await cursor.fetchall()]
+
+    async def get_active_users(self, limit: int = 50) -> List[dict]:
+        """Получить список активных пользователей"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT user_id, first_name, last_name, username, created_at FROM users WHERE last_request > datetime('now', '-30 days') ORDER BY last_request DESC LIMIT ?",
+                (limit,)
+            )
+            return [dict(row) for row in await cursor.fetchall()]
+
+    async def get_subscribers(self, limit: int = 50) -> List[dict]:
+        """Получить список подписчиков"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT user_id, first_name, last_name, username, created_at FROM users WHERE is_subscribed = 1 AND subscription_end > datetime('now') ORDER BY created_at DESC LIMIT ?",
+                (limit,)
+            )
+            return [dict(row) for row in await cursor.fetchall()]
+
+    async def get_subscribed_users(self) -> List[dict]:
+        """Получить всех подписчиков для рассылки"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT user_id FROM users WHERE is_subscribed = 1 AND subscription_end > datetime('now')"
+            )
+            return [dict(row) for row in await cursor.fetchall()]
+
+    async def get_user_role(self, user_id: int) -> str:
+        """Получить роль пользователя"""
+        from bot.utils.roles import TelegramUserPermissions
+
+        user = await self.get_user(user_id)
+        if user and 'role' in user:
+            return user['role']
+
+        # Возвращаем роль по умолчанию или предопределенную
+        return TelegramUserPermissions.get_user_role(user_id)
+
+    async def update_user_role(self, user_id: int, role: str) -> bool:
+        """Обновить роль пользователя"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute("""
+                    UPDATE users
+                    SET role = ?
+                    WHERE user_id = ?
+                """, (role, user_id))
+
+                await db.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Ошибка обновления роли пользователя {user_id}: {e}")
+            return False
+
+    async def get_users_by_role(self, role: str) -> List[dict]:
+        """Получить пользователей по роли"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM users WHERE role = ? ORDER BY created_at DESC",
+                (role,)
+            )
+            return [dict(row) for row in await cursor.fetchall()]
+
+    async def get_admin_users(self) -> List[dict]:
+        """Получить всех администраторов"""
+        from bot.utils.roles import RoleHierarchy
+
+        admin_roles = list(RoleHierarchy.ADMIN_ROLES)
+        placeholders = ','.join(['?' for _ in admin_roles])
+
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                f"SELECT * FROM users WHERE role IN ({placeholders}) ORDER BY role, created_at DESC",
+                admin_roles
+            )
+            return [dict(row) for row in await cursor.fetchall()]
+
+    async def get_active_users_for_broadcast(self, days: int = 30) -> List[dict]:
+        """Получить активных пользователей для рассылки"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT user_id FROM users WHERE last_request > datetime('now', '-{} days')".format(days)
+            )
             return [dict(row) for row in await cursor.fetchall()]

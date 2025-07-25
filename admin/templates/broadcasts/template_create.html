@@ -1,0 +1,508 @@
+{% extends "base.html" %}
+
+{% block title %}{% if template %}Редактирование шаблона{% else %}Создание шаблона{% endif %}{% endblock %}
+
+{% block extra_head %}
+<!-- Quill Rich Text Editor -->
+<link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+<script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+
+<style>
+.preview-panel {
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    padding: 1rem;
+    background-color: #f8f9fa;
+    min-height: 200px;
+}
+
+.telegram-message {
+    background: white;
+    border-radius: 12px;
+    padding: 12px 16px;
+    max-width: 400px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+#editor {
+    height: 300px;
+}
+
+.category-info {
+    background: #e3f2fd;
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 8px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>📝 {% if template %}Редактирование шаблона{% else %}Создание шаблона{% endif %}</h1>
+    <a href="/broadcasts/templates" class="btn btn-outline-secondary">
+        ← К шаблонам
+    </a>
+</div>
+
+<form id="templateForm">
+    <div class="row">
+        <!-- Основная форма -->
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">📋 Информация о шаблоне</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="templateName" class="form-label">Название шаблона *</label>
+                        <input type="text" class="form-control" id="templateName" name="name" 
+                               value="{{ template.name if template else '' }}" 
+                               placeholder="Например: Приветственное сообщение" required>
+                        <div class="form-text">Краткое описание назначения шаблона</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="templateCategory" class="form-label">Категория</label>
+                        <select class="form-select" id="templateCategory" name="category">
+                            <option value="general" {% if template and template.category == 'general' %}selected{% endif %}>
+                                📄 Общие
+                            </option>
+                            <option value="promotion" {% if template and template.category == 'promotion' %}selected{% endif %}>
+                                🎉 Акции и предложения
+                            </option>
+                            <option value="notification" {% if template and template.category == 'notification' %}selected{% endif %}>
+                                🔔 Уведомления
+                            </option>
+                            <option value="welcome" {% if template and template.category == 'welcome' %}selected{% endif %}>
+                                👋 Приветствие
+                            </option>
+                            <option value="support" {% if template and template.category == 'support' %}selected{% endif %}>
+                                🆘 Поддержка
+                            </option>
+                        </select>
+                        
+                        <div class="category-info" id="categoryInfo">
+                            <small class="text-muted">
+                                <strong>Общие:</strong> Универсальные шаблоны для различных целей
+                            </small>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="templateDescription" class="form-label">Описание (необязательно)</label>
+                        <textarea class="form-control" id="templateDescription" name="description" rows="2" 
+                                  placeholder="Краткое описание когда использовать этот шаблон">{{ template.description if template else '' }}</textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Редактор содержимого -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">✏️ Содержимое шаблона</h5>
+                </div>
+                <div class="card-body">
+                    <div id="editor">{{ template.content if template else '' }}</div>
+                    <input type="hidden" id="templateContent" name="content">
+                    
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            💡 Поддерживаются: <strong>жирный</strong>, <em>курсив</em>, 
+                            <code>моноширинный</code>, ссылки и эмодзи
+                        </small>
+                    </div>
+                    
+                    <div class="mt-2">
+                        <span class="badge bg-secondary" id="charCount">0 символов</span>
+                        <span class="badge bg-warning" id="charWarning" style="display: none;">
+                            Превышен лимит Telegram (4096 символов)
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Переменные шаблона -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">🔧 Переменные шаблона</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted mb-3">
+                        Вы можете использовать следующие переменные в тексте шаблона:
+                    </p>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="list-group list-group-flush">
+                                <div class="list-group-item d-flex justify-content-between align-items-center">
+                                    <code>{user_name}</code>
+                                    <small class="text-muted">Имя пользователя</small>
+                                </div>
+                                <div class="list-group-item d-flex justify-content-between align-items-center">
+                                    <code>{user_id}</code>
+                                    <small class="text-muted">ID пользователя</small>
+                                </div>
+                                <div class="list-group-item d-flex justify-content-between align-items-center">
+                                    <code>{current_date}</code>
+                                    <small class="text-muted">Текущая дата</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="list-group list-group-flush">
+                                <div class="list-group-item d-flex justify-content-between align-items-center">
+                                    <code>{bot_name}</code>
+                                    <small class="text-muted">Название бота</small>
+                                </div>
+                                <div class="list-group-item d-flex justify-content-between align-items-center">
+                                    <code>{subscription_end}</code>
+                                    <small class="text-muted">Окончание подписки</small>
+                                </div>
+                                <div class="list-group-item d-flex justify-content-between align-items-center">
+                                    <code>{requests_left}</code>
+                                    <small class="text-muted">Осталось запросов</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="insertVariable('{user_name}')">
+                            Вставить {user_name}
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="insertVariable('{current_date}')">
+                            Вставить {current_date}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Боковая панель -->
+        <div class="col-lg-4">
+            <!-- Предварительный просмотр -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">👁️ Предварительный просмотр</h5>
+                </div>
+                <div class="card-body">
+                    <div class="preview-panel">
+                        <div class="telegram-message" id="messagePreview">
+                            <em class="text-muted">Введите содержимое шаблона...</em>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Настройки -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">⚙️ Настройки</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="parseMode" class="form-label">Режим разметки</label>
+                        <select class="form-select" id="parseMode" name="parse_mode">
+                            <option value="HTML" {% if not template or template.parse_mode == 'HTML' %}selected{% endif %}>
+                                HTML
+                            </option>
+                            <option value="Markdown" {% if template and template.parse_mode == 'Markdown' %}selected{% endif %}>
+                                Markdown
+                            </option>
+                        </select>
+                        <div class="form-text">
+                            HTML рекомендуется для большинства случаев
+                        </div>
+                    </div>
+
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="isActive" name="is_active" 
+                               {% if not template or template.is_active %}checked{% endif %}>
+                        <label class="form-check-label" for="isActive">
+                            Активный шаблон
+                        </label>
+                        <div class="form-text">
+                            Неактивные шаблоны не отображаются в списке выбора
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Действия -->
+            <div class="card">
+                <div class="card-body">
+                    <button type="button" class="btn btn-outline-primary w-100 mb-2" onclick="testTemplate()">
+                        🧪 Тестировать шаблон
+                    </button>
+                    
+                    <button type="submit" class="btn btn-success w-100 mb-2">
+                        💾 {% if template %}Сохранить изменения{% else %}Создать шаблон{% endif %}
+                    </button>
+                    
+                    {% if template %}
+                    <button type="button" class="btn btn-outline-danger w-100" onclick="deleteTemplate()">
+                        🗑️ Удалить шаблон
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+<!-- Модальное окно тестирования -->
+<div class="modal fade" id="testModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">🧪 Тестирование шаблона</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="testUserId" class="form-label">ID пользователя для тестирования</label>
+                    <input type="number" class="form-control" id="testUserId" 
+                           placeholder="Введите ваш Telegram ID">
+                    <div class="form-text">
+                        Сообщение будет отправлено указанному пользователю
+                    </div>
+                </div>
+                
+                <div class="alert alert-info">
+                    <strong>Предварительный просмотр:</strong>
+                    <div id="testPreview" class="mt-2 p-2 bg-light rounded">
+                        <!-- Содержимое для тестирования -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    Отмена
+                </button>
+                <button type="button" class="btn btn-primary" onclick="sendTestMessage()">
+                    📤 Отправить тест
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let quill;
+const templateId = {{ template.id if template else 'null' }};
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Инициализация Quill
+    quill = new Quill('#editor', {
+        theme: 'snow',
+        placeholder: 'Введите содержимое шаблона...',
+        modules: {
+            toolbar: [
+                ['bold', 'italic', 'code'],
+                ['link'],
+                [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                ['clean']
+            ]
+        }
+    });
+
+    // Обновление предварительного просмотра
+    quill.on('text-change', function() {
+        updatePreview();
+        updateCharCount();
+    });
+
+    // Обновление описания категории
+    document.getElementById('templateCategory').addEventListener('change', updateCategoryInfo);
+    
+    // Обработка отправки формы
+    document.getElementById('templateForm').addEventListener('submit', handleFormSubmit);
+    
+    // Первоначальное обновление
+    updatePreview();
+    updateCharCount();
+    updateCategoryInfo();
+});
+
+function updatePreview() {
+    const content = quill.root.innerHTML;
+    const preview = document.getElementById('messagePreview');
+    
+    if (content.trim() === '<p><br></p>' || !content.trim()) {
+        preview.innerHTML = '<em class="text-muted">Введите содержимое шаблона...</em>';
+    } else {
+        // Заменяем переменные на примеры
+        let previewContent = content
+            .replace(/{user_name}/g, '<strong>Иван</strong>')
+            .replace(/{user_id}/g, '123456789')
+            .replace(/{current_date}/g, new Date().toLocaleDateString('ru-RU'))
+            .replace(/{bot_name}/g, 'Channel Finder Bot')
+            .replace(/{subscription_end}/g, '31.12.2024')
+            .replace(/{requests_left}/g, '5');
+        
+        preview.innerHTML = previewContent;
+    }
+}
+
+function updateCharCount() {
+    const text = quill.getText();
+    const count = text.length;
+    const countElement = document.getElementById('charCount');
+    const warningElement = document.getElementById('charWarning');
+    
+    countElement.textContent = `${count} символов`;
+    
+    if (count > 4096) {
+        countElement.className = 'badge bg-danger';
+        warningElement.style.display = 'inline';
+    } else if (count > 3500) {
+        countElement.className = 'badge bg-warning';
+        warningElement.style.display = 'none';
+    } else {
+        countElement.className = 'badge bg-secondary';
+        warningElement.style.display = 'none';
+    }
+}
+
+function updateCategoryInfo() {
+    const category = document.getElementById('templateCategory').value;
+    const infoElement = document.getElementById('categoryInfo');
+    
+    const descriptions = {
+        'general': '<strong>Общие:</strong> Универсальные шаблоны для различных целей',
+        'promotion': '<strong>Акции:</strong> Рекламные сообщения, скидки, специальные предложения',
+        'notification': '<strong>Уведомления:</strong> Системные сообщения, напоминания',
+        'welcome': '<strong>Приветствие:</strong> Сообщения для новых пользователей',
+        'support': '<strong>Поддержка:</strong> Ответы на частые вопросы, помощь'
+    };
+    
+    infoElement.innerHTML = `<small class="text-muted">${descriptions[category]}</small>`;
+}
+
+function insertVariable(variable) {
+    const range = quill.getSelection();
+    if (range) {
+        quill.insertText(range.index, variable);
+    } else {
+        quill.insertText(quill.getLength() - 1, variable);
+    }
+    quill.focus();
+}
+
+function testTemplate() {
+    document.getElementById('testPreview').innerHTML = document.getElementById('messagePreview').innerHTML;
+    new bootstrap.Modal(document.getElementById('testModal')).show();
+}
+
+async function sendTestMessage() {
+    const userId = document.getElementById('testUserId').value;
+    if (!userId) {
+        alert('Введите ID пользователя');
+        return;
+    }
+    
+    const content = quill.root.innerHTML;
+    
+    try {
+        const response = await fetch('/api/templates/test', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                user_id: parseInt(userId),
+                content: content,
+                parse_mode: document.getElementById('parseMode').value
+            })
+        });
+        
+        if (response.ok) {
+            alert('Тестовое сообщение отправлено!');
+            bootstrap.Modal.getInstance(document.getElementById('testModal')).hide();
+        } else {
+            const error = await response.json();
+            alert(`Ошибка отправки: ${error.detail}`);
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка отправки тестового сообщения');
+    }
+}
+
+async function handleFormSubmit(e) {
+    e.preventDefault();
+    
+    // Сохраняем содержимое редактора
+    document.getElementById('templateContent').value = quill.root.innerHTML;
+    
+    const formData = new FormData(e.target);
+    const url = templateId ? `/api/templates/${templateId}` : '/api/templates/';
+    const method = templateId ? 'PUT' : 'POST';
+    
+    try {
+        const response = await fetch(url, {
+            method: method,
+            body: formData
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            alert(templateId ? 'Шаблон обновлен!' : 'Шаблон создан!');
+            
+            if (!templateId) {
+                window.location.href = `/broadcasts/templates/${data.template_id}/edit`;
+            }
+        } else {
+            const error = await response.json();
+            alert(`Ошибка: ${error.detail}`);
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка сохранения шаблона');
+    }
+}
+
+async function deleteTemplate() {
+    if (!templateId) return;
+    
+    if (!confirm('Удалить шаблон? Это действие нельзя отменить.')) return;
+    
+    try {
+        const response = await fetch(`/api/templates/${templateId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            alert('Шаблон удален!');
+            window.location.href = '/broadcasts/templates';
+        } else {
+            alert('Ошибка удаления шаблона');
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка удаления шаблона');
+    }
+}
+
+// Горячие клавиши
+document.addEventListener('keydown', function(e) {
+    // Ctrl+S - сохранить
+    if (e.ctrlKey && e.key === 's') {
+        e.preventDefault();
+        document.getElementById('templateForm').dispatchEvent(new Event('submit'));
+    }
+    
+    // Ctrl+T - тестировать
+    if (e.ctrlKey && e.key === 't') {
+        e.preventDefault();
+        testTemplate();
+    }
+});
+</script>
+{% endblock %}

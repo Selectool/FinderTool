@@ -1,0 +1,457 @@
+{% extends "base.html" %} {% block title %}Массовые рассылки{% endblock %} {%
+block extra_head %}
+<style>
+	.broadcast-status {
+		padding: 4px 8px;
+		border-radius: 4px;
+		font-size: 0.875rem;
+		font-weight: 500;
+	}
+	.status-pending {
+		background-color: #fef3c7;
+		color: #92400e;
+	}
+	.status-sending {
+		background-color: #dbeafe;
+		color: #1e40af;
+	}
+	.status-completed {
+		background-color: #d1fae5;
+		color: #065f46;
+	}
+	.status-failed {
+		background-color: #fee2e2;
+		color: #991b1b;
+	}
+	.status-paused {
+		background-color: #f3e8ff;
+		color: #7c3aed;
+	}
+
+	.progress-bar-container {
+		height: 8px;
+		background-color: #e5e7eb;
+		border-radius: 4px;
+		overflow: hidden;
+	}
+	.progress-bar {
+		height: 100%;
+		background-color: #10b981;
+		transition: width 0.3s ease;
+	}
+</style>
+{% endblock %} {% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+	<h1>📢 Массовые рассылки</h1>
+	<div>
+		<a href="/broadcasts/templates" class="btn btn-outline-primary me-2">
+			📝 Шаблоны
+		</a>
+		<a href="/broadcasts/create" class="btn btn-primary">
+			➕ Создать рассылку
+		</a>
+	</div>
+</div>
+
+<!-- Фильтры -->
+<div class="card mb-4">
+	<div class="card-body">
+		<div class="row g-3">
+			<div class="col-md-3">
+				<label class="form-label">Статус</label>
+				<select class="form-select" id="statusFilter">
+					<option value="">Все статусы</option>
+					<option value="pending">Ожидает</option>
+					<option value="sending">Отправляется</option>
+					<option value="completed">Завершена</option>
+					<option value="failed">Ошибка</option>
+					<option value="paused">Приостановлена</option>
+				</select>
+			</div>
+			<div class="col-md-3">
+				<label class="form-label">Период</label>
+				<select class="form-select" id="periodFilter">
+					<option value="">Все время</option>
+					<option value="today">Сегодня</option>
+					<option value="week">Неделя</option>
+					<option value="month">Месяц</option>
+				</select>
+			</div>
+			<div class="col-md-4">
+				<label class="form-label">Поиск</label>
+				<input
+					type="text"
+					class="form-control"
+					id="searchFilter"
+					placeholder="Поиск по названию или тексту..."
+				/>
+			</div>
+			<div class="col-md-2">
+				<label class="form-label">&nbsp;</label>
+				<button
+					class="btn btn-outline-secondary w-100"
+					onclick="clearFilters()"
+				>
+					🗑️ Очистить
+				</button>
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- Статистика -->
+<div class="row mb-4">
+	<div class="col-md-3">
+		<div class="card text-center">
+			<div class="card-body">
+				<h5 class="card-title text-primary">
+					{{ broadcasts_stats.total or 0 }}
+				</h5>
+				<p class="card-text">Всего рассылок</p>
+			</div>
+		</div>
+	</div>
+	<div class="col-md-3">
+		<div class="card text-center">
+			<div class="card-body">
+				<h5 class="card-title text-success">
+					{{ broadcasts_stats.completed or 0 }}
+				</h5>
+				<p class="card-text">Завершено</p>
+			</div>
+		</div>
+	</div>
+	<div class="col-md-3">
+		<div class="card text-center">
+			<div class="card-body">
+				<h5 class="card-title text-info">
+					{{ broadcasts_stats.sending or 0 }}
+				</h5>
+				<p class="card-text">В процессе</p>
+			</div>
+		</div>
+	</div>
+	<div class="col-md-3">
+		<div class="card text-center">
+			<div class="card-body">
+				<h5 class="card-title text-warning">
+					{{ broadcasts_stats.pending or 0 }}
+				</h5>
+				<p class="card-text">Запланировано</p>
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- Список рассылок -->
+<div class="card">
+	<div class="card-body">
+		{% if broadcasts %}
+		<div class="table-responsive">
+			<table class="table table-hover">
+				<thead>
+					<tr>
+						<th>ID</th>
+						<th>Название/Текст</th>
+						<th>Статус</th>
+						<th>Прогресс</th>
+						<th>Целевая аудитория</th>
+						<th>Создано</th>
+						<th>Действия</th>
+					</tr>
+				</thead>
+				<tbody id="broadcastsTable">
+					{% for broadcast in broadcasts %}
+					<tr data-broadcast-id="{{ broadcast.id }}">
+						<td>
+							<strong>#{{ broadcast.id }}</strong>
+						</td>
+						<td>
+							<div class="broadcast-preview">
+								{% if broadcast.name %}
+								<strong>{{ broadcast.name }}</strong><br />
+								{% endif %}
+								<small class="text-muted">
+									{{ broadcast.message_text[:100] }}{% if
+									broadcast.message_text|length > 100 %}...{% endif %}
+								</small>
+							</div>
+						</td>
+						<td>
+							<span
+								class="broadcast-status status-{{ broadcast.status or 'pending' }}"
+							>
+								{% if broadcast.status == 'pending' %}⏳ Ожидает {% elif
+								broadcast.status == 'sending' %}📤 Отправляется {% elif
+								broadcast.status == 'completed' %}✅ Завершена {% elif
+								broadcast.status == 'failed' %}❌ Ошибка {% elif
+								broadcast.status == 'paused' %}⏸️ Приостановлена {% else %}⏳
+								Ожидает {% endif %}
+							</span>
+						</td>
+						<td>
+							<div class="progress-info">
+								{% set total = (broadcast.sent_count or 0) +
+								(broadcast.failed_count or 0) %} {% set sent =
+								broadcast.sent_count or 0 %} {% if total > 0 %} {% set progress
+								= (sent / total * 100)|round(1) %}
+								<div class="progress-bar-container mb-1">
+									<div
+										class="progress-bar"
+										style="width: {{ progress }}%"
+									></div>
+								</div>
+								<small class="text-muted"
+									>{{ sent }}/{{ total }} ({{ progress }}%)</small
+								>
+								{% else %}
+								<small class="text-muted">Не запущена</small>
+								{% endif %}
+							</div>
+						</td>
+						<td>
+							<small class="text-muted">
+								{% if broadcast.target_users == 'all' %}👥 Все пользователи {%
+								elif broadcast.target_users == 'subscribers' %}💎 Подписчики {%
+								elif broadcast.target_users == 'active' %}🟢 Активные {% else
+								%}🎯 Выборочно {% endif %}
+							</small>
+						</td>
+						<td>
+							<small class="text-muted">
+								{% if broadcast.created_at %} {% if broadcast.created_at is
+								string %} {{ broadcast.created_at[:19].replace('T', ' ') if 'T'
+								in broadcast.created_at else broadcast.created_at[:19] }} {%
+								else %} {{ broadcast.created_at.strftime('%d.%m.%Y %H:%M') }} {%
+								endif %} {% else %} - {% endif %}
+							</small>
+						</td>
+						<td>
+							<div class="btn-group btn-group-sm">
+								<a
+									href="/broadcasts/{{ broadcast.id }}"
+									class="btn btn-outline-primary"
+									title="Просмотр"
+								>
+									👁️
+								</a>
+								{% if broadcast.status == 'pending' %}
+								<button
+									class="btn btn-outline-success"
+									onclick="startBroadcast({{ broadcast.id }})"
+									title="Запустить"
+								>
+									▶️
+								</button>
+								{% elif broadcast.status == 'sending' %}
+								<button
+									class="btn btn-outline-warning"
+									onclick="pauseBroadcast({{ broadcast.id }})"
+									title="Приостановить"
+								>
+									⏸️
+								</button>
+								{% elif broadcast.status == 'paused' %}
+								<button
+									class="btn btn-outline-success"
+									onclick="resumeBroadcast({{ broadcast.id }})"
+									title="Возобновить"
+								>
+									▶️
+								</button>
+								{% endif %} {% if broadcast.status in ['pending', 'failed'] %}
+								<button
+									class="btn btn-outline-danger"
+									onclick="deleteBroadcast({{ broadcast.id }})"
+									title="Удалить"
+								>
+									🗑️
+								</button>
+								{% endif %}
+							</div>
+						</td>
+					</tr>
+					{% endfor %}
+				</tbody>
+			</table>
+		</div>
+
+		<!-- Пагинация -->
+		{% if pagination and pagination.pages > 1 %}
+		<nav aria-label="Пагинация рассылок">
+			<ul class="pagination justify-content-center">
+				{% if pagination.has_prev %}
+				<li class="page-item">
+					<a class="page-link" href="?page={{ pagination.prev_num }}"
+						>Предыдущая</a
+					>
+				</li>
+				{% endif %} {% for page_num in pagination.iter_pages() %} {% if page_num
+				%} {% if page_num != pagination.page %}
+				<li class="page-item">
+					<a class="page-link" href="?page={{ page_num }}">{{ page_num }}</a>
+				</li>
+				{% else %}
+				<li class="page-item active">
+					<span class="page-link">{{ page_num }}</span>
+				</li>
+				{% endif %} {% else %}
+				<li class="page-item disabled">
+					<span class="page-link">…</span>
+				</li>
+				{% endif %} {% endfor %} {% if pagination.has_next %}
+				<li class="page-item">
+					<a class="page-link" href="?page={{ pagination.next_num }}"
+						>Следующая</a
+					>
+				</li>
+				{% endif %}
+			</ul>
+		</nav>
+		{% endif %} {% else %}
+		<div class="text-center py-5">
+			<div class="mb-3">
+				<i class="fas fa-bullhorn fa-3x text-muted"></i>
+			</div>
+			<h5 class="text-muted">Рассылок пока нет</h5>
+			<p class="text-muted">Создайте первую рассылку для ваших пользователей</p>
+			<a href="/broadcasts/create" class="btn btn-primary">
+				➕ Создать рассылку
+			</a>
+		</div>
+		{% endif %}
+	</div>
+</div>
+{% endblock %} {% block extra_scripts %}
+<script>
+	// Функции управления рассылками
+	async function startBroadcast(broadcastId) {
+		if (!confirm('Запустить рассылку? Это действие нельзя отменить.')) return
+
+		try {
+			const response = await fetch(`/api/broadcasts/${broadcastId}/start`, {
+				method: 'POST',
+			})
+
+			if (response.ok) {
+				location.reload()
+			} else {
+				alert('Ошибка запуска рассылки')
+			}
+		} catch (error) {
+			console.error('Ошибка:', error)
+			alert('Ошибка запуска рассылки')
+		}
+	}
+
+	async function pauseBroadcast(broadcastId) {
+		if (!confirm('Приостановить рассылку?')) return
+
+		try {
+			const response = await fetch(`/api/broadcasts/${broadcastId}/pause`, {
+				method: 'POST',
+			})
+
+			if (response.ok) {
+				location.reload()
+			} else {
+				alert('Ошибка приостановки рассылки')
+			}
+		} catch (error) {
+			console.error('Ошибка:', error)
+			alert('Ошибка приостановки рассылки')
+		}
+	}
+
+	async function resumeBroadcast(broadcastId) {
+		if (!confirm('Возобновить рассылку?')) return
+
+		try {
+			const response = await fetch(`/api/broadcasts/${broadcastId}/resume`, {
+				method: 'POST',
+			})
+
+			if (response.ok) {
+				location.reload()
+			} else {
+				alert('Ошибка возобновления рассылки')
+			}
+		} catch (error) {
+			console.error('Ошибка:', error)
+			alert('Ошибка возобновления рассылки')
+		}
+	}
+
+	async function deleteBroadcast(broadcastId) {
+		if (!confirm('Удалить рассылку? Это действие нельзя отменить.')) return
+
+		try {
+			const response = await fetch(`/api/broadcasts/${broadcastId}`, {
+				method: 'DELETE',
+			})
+
+			if (response.ok) {
+				location.reload()
+			} else {
+				alert('Ошибка удаления рассылки')
+			}
+		} catch (error) {
+			console.error('Ошибка:', error)
+			alert('Ошибка удаления рассылки')
+		}
+	}
+
+	// Фильтрация
+	function clearFilters() {
+		document.getElementById('statusFilter').value = ''
+		document.getElementById('periodFilter').value = ''
+		document.getElementById('searchFilter').value = ''
+		filterBroadcasts()
+	}
+
+	function filterBroadcasts() {
+		// TODO: Реализовать клиентскую фильтрацию или AJAX запросы
+	}
+
+	// Автообновление статуса активных рассылок
+	setInterval(async () => {
+		const sendingRows = document.querySelectorAll('tr[data-broadcast-id]')
+		for (const row of sendingRows) {
+			const status = row.querySelector('.broadcast-status')
+			if (status && status.textContent.includes('Отправляется')) {
+				// Обновляем прогресс активных рассылок
+				const broadcastId = row.dataset.broadcastId
+				try {
+					const response = await fetch(`/api/broadcasts/${broadcastId}/status`)
+					if (response.ok) {
+						const data = await response.json()
+						// Обновляем прогресс-бар и статистику
+						updateBroadcastProgress(row, data)
+					}
+				} catch (error) {
+					console.error('Ошибка обновления статуса:', error)
+				}
+			}
+		}
+	}, 5000) // Обновляем каждые 5 секунд
+
+	function updateBroadcastProgress(row, data) {
+		const progressBar = row.querySelector('.progress-bar')
+		const progressText = row.querySelector('.progress-info small')
+		const statusSpan = row.querySelector('.broadcast-status')
+
+		if (progressBar && data.total > 0) {
+			const progress = (data.sent / data.total) * 100
+			progressBar.style.width = progress + '%'
+			progressText.textContent = `${data.sent}/${
+				data.total
+			} (${progress.toFixed(1)}%)`
+		}
+
+		if (statusSpan && data.status !== statusSpan.dataset.status) {
+			// Обновляем статус если изменился
+			location.reload()
+		}
+	}
+</script>
+{% endblock %}

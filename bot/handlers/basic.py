@@ -52,7 +52,11 @@ async def cmd_profile(message: Message, db: Database):
         return
     
     user_id = message.from_user.id
-    is_developer = user_id in DEVELOPER_IDS
+    from bot.utils.roles import TelegramUserPermissions
+
+    user_role = await db.get_user_role(user_id)
+    role_display = TelegramUserPermissions.get_role_display_name(user_role)
+    has_unlimited = TelegramUserPermissions.has_unlimited_access(user_id, user_role)
     is_subscribed = await db.check_subscription(user_id)
     requests_left = max(0, FREE_REQUESTS_LIMIT - user_data['requests_used'])
 
@@ -62,13 +66,14 @@ async def cmd_profile(message: Message, db: Database):
 🆔 ID: {user_data['user_id']}
 👤 Имя: {user_data['first_name'] or 'Не указано'}
 📅 Регистрация: {user_data['created_at'][:10]}
+🎭 Роль: {role_display}
 
 📊 <b>Статистика:</b>
 🔍 Запросов использовано: {user_data['requests_used']}
 """
 
-    if is_developer:
-        profile_text += f"🔧 <b>Статус: РАЗРАБОТЧИК</b>\n💎 Безлимитный доступ ко всем функциям"
+    if has_unlimited:
+        profile_text += f"🔧 <b>Статус: {role_display.upper()}</b>\n💎 Безлимитный доступ ко всем функциям"
     elif is_subscribed:
         profile_text += f"💎 Статус: Подписчик до {user_data['subscription_end'][:10]}"
     else:
@@ -91,7 +96,11 @@ async def callback_profile(callback: CallbackQuery, db: Database):
         return
     
     user_id = callback.from_user.id
-    is_developer = user_id in DEVELOPER_IDS
+    from bot.utils.roles import TelegramUserPermissions
+
+    user_role = await db.get_user_role(user_id)
+    role_display = TelegramUserPermissions.get_role_display_name(user_role)
+    has_unlimited = TelegramUserPermissions.has_unlimited_access(user_id, user_role)
     is_subscribed = await db.check_subscription(user_id)
     requests_left = max(0, FREE_REQUESTS_LIMIT - user_data['requests_used'])
 
@@ -101,13 +110,14 @@ async def callback_profile(callback: CallbackQuery, db: Database):
 🆔 ID: {user_data['user_id']}
 👤 Имя: {user_data['first_name'] or 'Не указано'}
 📅 Регистрация: {user_data['created_at'][:10]}
+🎭 Роль: {role_display}
 
 📊 <b>Статистика:</b>
 🔍 Запросов использовано: {user_data['requests_used']}
 """
 
-    if is_developer:
-        profile_text += f"🔧 <b>Статус: РАЗРАБОТЧИК</b>\n💎 Безлимитный доступ ко всем функциям"
+    if has_unlimited:
+        profile_text += f"🔧 <b>Статус: {role_display.upper()}</b>\n💎 Безлимитный доступ ко всем функциям"
     elif is_subscribed:
         profile_text += f"💎 Статус: Подписчик до {user_data['subscription_end'][:10]}"
     else:

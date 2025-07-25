@@ -12,10 +12,21 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import HTMLResponse
 import structlog
 
-from .config import (
-    DEBUG, HOST, PORT, CORS_ORIGINS, ALLOWED_HOSTS, 
-    LOG_LEVEL, DATABASE_PATH, UPLOAD_DIR
-)
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+    from .config import (
+        DEBUG, HOST, PORT, CORS_ORIGINS, ALLOWED_HOSTS,
+        LOG_LEVEL, DATABASE_PATH, UPLOAD_DIR
+    )
+except ImportError:
+    from config import (
+        DEBUG, HOST, PORT, CORS_ORIGINS, ALLOWED_HOSTS,
+        LOG_LEVEL, DATABASE_PATH, UPLOAD_DIR
+    )
+
 from database.models import Database
 
 # Настройка логирования
@@ -32,8 +43,16 @@ async def lifespan(app: FastAPI):
     # Инициализация базы данных
     db = Database(DATABASE_PATH)
     await db.init_db()
+
+    # Инициализация системы прав доступа для рассылок
+    await init_broadcast_permissions(db)
+
+    # Инициализация сервиса аудита
+    from admin.services.audit_service import init_audit_service
+    init_audit_service(db)
+
     app.state.db = db
-    
+
     logger.info("Админ-панель запущена успешно")
     
     yield
@@ -108,10 +127,17 @@ async def add_db_to_request(request: Request, call_next):
 
 
 # Статические файлы и шаблоны
-app.mount("/static", StaticFiles(directory="admin/static"), name="static")
+# Определяем корневую директорию проекта
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+admin_dir = os.path.join(project_root, "admin")
+
+static_dir = os.path.join(admin_dir, "static")
+templates_dir = os.path.join(admin_dir, "templates")
+
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
-templates = Jinja2Templates(directory="admin/templates")
+templates = Jinja2Templates(directory=templates_dir)
 
 
 # Обработчики ошибок
@@ -153,17 +179,38 @@ async def root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+@app.get("/audit", response_class=HTMLResponse)
+async def audit_logs_page(request: Request):
+    """Страница логов аудита"""
+    return templates.TemplateResponse("audit/logs.html", {"request": request})
+
+
 # Подключение роутеров
-from .api import auth, users, broadcasts, statistics, templates as template_routes
+try:
+    from .api import auth, users, broadcasts, statistics, templates as template_routes, roles, audit
+except ImportError:
+    from admin.api import auth, users, broadcasts, statistics, templates as template_routes, roles, audit
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(broadcasts.router, prefix="/api/broadcasts", tags=["broadcasts"])
 app.include_router(statistics.router, prefix="/api/statistics", tags=["statistics"])
 app.include_router(template_routes.router, prefix="/api/templates", tags=["templates"])
+app.include_router(roles.router, prefix="/api/roles", tags=["roles"])
+app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
 
 # Веб-страницы
-from .web import auth as web_auth, dashboard, users as web_users, broadcasts as web_broadcasts
+try:
+    from .web import auth as web_auth, dashboard, users as web_users, broadcasts as web_broadcasts
+    # Инициализация системы прав доступа для рассылок
+    from .auth.broadcast_permissions import init_broadcast_permissions, add_get_user_permissions_method
+except ImportError:
+    from admin.web import auth as web_auth, dashboard, users as web_users, broadcasts as web_broadcasts
+    # Инициализация системы прав доступа для рассылок
+    from admin.auth.broadcast_permissions import init_broadcast_permissions, add_get_user_permissions_method
+
+# Добавляем метод get_user_permissions в класс Database
+add_get_user_permissions_method()
 
 app.include_router(web_auth.router, prefix="/auth", tags=["web-auth"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["web-dashboard"])
