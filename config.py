@@ -155,3 +155,28 @@ TEXTS = {
 Нажмите кнопку ниже для оплаты:
     """
 }
+
+# Окружение
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+# Настройки комиссий ЮKassa (в процентах)
+YOOKASSA_COMMISSIONS = {
+    'bank_card': 3.5,
+    'yoo_money': 3.5,
+    'sberbank': 3.5,
+    'sbp': 0.7,  # Система быстрых платежей
+    'qiwi': 6.0,
+    'default': 3.5
+}
+
+# Дополнительные настройки ЮKassa для API
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "390540012")
+YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "test_Fh8hUAVVBGUGbjmlzba6TB0iyUbos_lueTHE-axOwM0")
+YOOKASSA_RETURN_URL = os.getenv("YOOKASSA_RETURN_URL", "https://t.me/FinderToolBot")
+
+# Базовая цена подписки (без комиссии)
+SUBSCRIPTION_BASE_PRICE = 349.00  # рублей
+
+logger.info(f"Базовая цена подписки: {SUBSCRIPTION_BASE_PRICE}₽")
+logger.info(f"Комиссии ЮKassa: {YOOKASSA_COMMISSIONS}")
+logger.info(f"ЮKassa Shop ID: {YOOKASSA_SHOP_ID}")

@@ -8,6 +8,7 @@ from aiogram.fsm.context import FSMContext
 
 from database.models import Database
 from bot.keyboards.inline import get_main_menu, get_back_keyboard
+from bot.keyboards.reply import get_main_menu_keyboard
 from config import TEXTS, SUBSCRIPTION_PRICE, FREE_REQUESTS_LIMIT, DEVELOPER_IDS
 
 router = Router()
@@ -15,9 +16,9 @@ router = Router()
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, db: Database):
-    """Обработчик команды /start"""
+    """Обработчик команды /start с Reply клавиатурой"""
     user = message.from_user
-    
+
     # Создаем или обновляем пользователя в БД
     await db.create_user(
         user_id=user.id,
@@ -25,10 +26,14 @@ async def cmd_start(message: Message, db: Database):
         first_name=user.first_name,
         last_name=user.last_name
     )
-    
+
+    # Получаем роль пользователя для клавиатуры
+    user_data = await db.get_user(user.id)
+    user_role = user_data.get('role', 'user') if user_data else 'user'
+
     await message.answer(
         TEXTS["start"].format(price=SUBSCRIPTION_PRICE),
-        reply_markup=get_main_menu(),
+        reply_markup=get_main_menu_keyboard(user_role),
         parse_mode="HTML"
     )
 

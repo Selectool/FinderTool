@@ -225,20 +225,25 @@ async def handle_dev_panel(message: Message, db: Database):
             await message.answer("❌ Доступ только для разработчиков.")
             return
         
+        # Получаем режим ЮKassa из конфигурации
+        from config import YOOKASSA_MODE, YOOKASSA_PROVIDER_TOKEN
+        yookassa_mode = YOOKASSA_MODE
+        is_live_mode = ":LIVE:" in YOOKASSA_PROVIDER_TOKEN
+
         dev_text = f"""
 🔧 <b>Панель разработчика</b>
 
 🚀 <b>Системная информация:</b>
-• Режим ЮKassa: {'LIVE' if 'LIVE' in str(message.bot.token) else 'TEST'}
+• Режим ЮKassa: {'LIVE' if is_live_mode else 'TEST'}
 • Версия бота: 2.0 Production
 • Статус: Активен
 
 🛠️ <b>Доступные команды:</b>
 • /dev_stats - Техническая статистика
-• /logs - Просмотр логов
-• /restart - Перезапуск бота (осторожно!)
+• /logs - Просмотр логов системы
+• /restart - Информация о перезапуске
 
-⚠️ Будьте осторожны с командами разработчика!
+💡 Все команды безопасны для использования
         """
         
         await message.answer(

@@ -681,7 +681,7 @@ class ChannelFinder:
         return sorted_channels
 
     def generate_csv_export(self, results: Dict) -> io.StringIO:
-        """Генерация CSV файла с результатами поиска (Windows-совместимый)"""
+        """Генерация оптимизированного CSV файла с результатами поиска (только 3 колонки)"""
         output = io.StringIO()
 
         # Добавляем BOM для корректного отображения UTF-8 в Excel на Windows
@@ -689,32 +689,25 @@ class ChannelFinder:
 
         writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_ALL)
 
-        # Заголовки CSV
+        # Упрощенные заголовки CSV (только 3 колонки)
         headers = [
             'Название канала',
-            'Username',
             'Ссылка',
-            'Количество подписчиков',
-            'Описание',
-            'Верифицирован',
-            'Методы поиска',
-            'Скор релевантности',
-            'ID канала'
+            'Количество подписчиков'
         ]
         writer.writerow(headers)
 
-        # Данные каналов
+        # Данные каналов (только основная информация)
         for channel in results.get('channels', []):
+            # Формируем название с эмодзи верификации
+            title = channel.get('title', '')
+            if channel.get('verified', False):
+                title += ' ✅'
+
             row = [
-                channel.get('title', ''),
-                channel.get('username', ''),
+                title,
                 channel.get('link', ''),
-                channel.get('participants_count', 0),
-                channel.get('description', '')[:200] + '...' if len(channel.get('description', '')) > 200 else channel.get('description', ''),
-                'Да' if channel.get('verified', False) else 'Нет',
-                ', '.join(channel.get('methods', [channel.get('method', '')])),
-                round(channel.get('similarity_score', 0), 2),
-                channel.get('id', '')
+                channel.get('participants_count', 0)
             ]
             writer.writerow(row)
 
@@ -722,7 +715,7 @@ class ChannelFinder:
         return output
 
     def generate_excel_compatible_csv(self, results: Dict) -> io.BytesIO:
-        """Генерация CSV файла совместимого с Excel на Windows"""
+        """Генерация оптимизированного CSV файла совместимого с Excel на Windows"""
         import codecs
 
         # Создаем BytesIO для бинарных данных
@@ -735,32 +728,25 @@ class ChannelFinder:
         csv_data = io.StringIO()
         writer = csv.writer(csv_data, delimiter=';', quoting=csv.QUOTE_ALL)
 
-        # Заголовки
+        # Упрощенные заголовки (только 3 колонки)
         headers = [
             'Название канала',
-            'Username',
             'Ссылка',
-            'Количество подписчиков',
-            'Описание',
-            'Верифицирован',
-            'Методы поиска',
-            'Скор релевантности',
-            'ID канала'
+            'Количество подписчиков'
         ]
         writer.writerow(headers)
 
-        # Данные каналов
+        # Данные каналов (только основная информация)
         for channel in results.get('channels', []):
+            # Формируем название с эмодзи верификации
+            title = channel.get('title', '')
+            if channel.get('verified', False):
+                title += ' ✅'
+
             row = [
-                channel.get('title', ''),
-                channel.get('username', ''),
+                title,
                 channel.get('link', ''),
-                channel.get('participants_count', 0),
-                channel.get('description', '')[:200] + '...' if len(channel.get('description', '')) > 200 else channel.get('description', ''),
-                'Да' if channel.get('verified', False) else 'Нет',
-                ', '.join(channel.get('methods', [channel.get('method', '')])),
-                round(channel.get('similarity_score', 0), 2),
-                channel.get('id', '')
+                channel.get('participants_count', 0)
             ]
             writer.writerow(row)
 

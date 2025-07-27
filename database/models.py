@@ -495,6 +495,51 @@ class Database:
             await db.commit()
             return True
 
+    async def update_subscription(self, user_id: int, is_subscribed: bool = None,
+                                subscription_end: datetime = None) -> bool:
+        """Обновить подписку пользователя"""
+        updates = []
+        params = []
+
+        if is_subscribed is not None:
+            updates.append("is_subscribed = ?")
+            params.append(is_subscribed)
+
+        if subscription_end is not None:
+            updates.append("subscription_end = ?")
+            params.append(subscription_end)
+        elif is_subscribed is False:
+            # Если отменяем подписку, очищаем дату окончания
+            updates.append("subscription_end = NULL")
+
+        if not updates:
+            return False
+
+        update_query = f"UPDATE users SET {', '.join(updates)} WHERE user_id = ?"
+
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(update_query, params + [user_id])
+            await db.commit()
+            return True
+
+    async def reset_user_requests(self, user_id: int) -> bool:
+        """Сбросить счетчик запросов пользователя"""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                UPDATE users
+                SET requests_used = 0
+                WHERE user_id = ?
+            """, (user_id,))
+            await db.commit()
+            return True
+
+    async def get_total_requests_count(self) -> int:
+        """Получить общее количество запросов всех пользователей"""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("SELECT SUM(requests_used) FROM users")
+            result = await cursor.fetchone()
+            return result[0] if result[0] is not None else 0
+
     async def mark_user_bot_blocked(self, user_id: int) -> bool:
         """Пометить пользователя как заблокировавшего бота"""
         async with aiosqlite.connect(self.db_path) as db:
@@ -625,16 +670,19 @@ class Database:
 
     # ========== РАССЫЛКИ ==========
 
-    async def create_broadcast(self, message_text: str, template_id: int = None,
+    async def create_broadcast(self, message_text: str, title: str = None, template_id: int = None,
                              parse_mode: str = 'HTML', target_users: str = 'all',
                              created_by: int = None, scheduled_at: datetime = None) -> int:
         """Создать рассылку"""
+        if title is None:
+            title = f"Рассылка {target_users}"
+
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
                 INSERT INTO broadcasts
-                (message_text, template_id, parse_mode, target_users, created_by, scheduled_at, status)
-                VALUES (?, ?, ?, ?, ?, ?, 'pending')
-            """, (message_text, template_id, parse_mode, target_users, created_by, scheduled_at))
+                (title, message_text, template_id, parse_mode, target_users, created_by, scheduled_at, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+            """, (title, message_text, template_id, parse_mode, target_users, created_by, scheduled_at))
             await db.commit()
             return cursor.lastrowid
 
@@ -718,6 +766,16 @@ class Database:
             """, params)
             await db.commit()
             return True
+
+    async def get_broadcast_by_id(self, broadcast_id: int) -> dict:
+        """Получить рассылку по ID"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("""
+                SELECT * FROM broadcasts WHERE id = ?
+            """, (broadcast_id,))
+            row = await cursor.fetchone()
+            return dict(row) if row else None
 
     async def update_broadcast_status(self, broadcast_id: int, status: str) -> bool:
         """Обновить статус рассылки"""
@@ -859,7 +917,24 @@ class Database:
     async def get_broadcast_detailed_stats(self, broadcast_id: int) -> Dict[str, Any]:
         """Получить детальную статистику рассылки"""
         async with aiosqlite.connect(self.db_path) as db:
-            # Статистика по статусам доставки
+            # Общая информация о рассылке
+            broadcast = await self.get_broadcast_by_id(broadcast_id)
+
+            if not broadcast:
+                return {
+                    "delivered": 0,
+                    "failed": 0,
+                    "blocked": 0,
+                    "total_recipients": 0,
+                    "current_rate": 0,
+                    "estimated_time": ""
+                }
+
+            # Получаем статистику из таблицы broadcasts
+            sent_count = broadcast.get("sent_count", 0)
+            failed_count = broadcast.get("failed_count", 0)
+
+            # Также проверяем логи, если они есть
             cursor = await db.execute("""
                 SELECT status, COUNT(*) as count
                 FROM broadcast_logs
@@ -871,29 +946,31 @@ class Database:
             for row in await cursor.fetchall():
                 status_stats[row[0]] = row[1]
 
-            # Общая информация о рассылке
-            broadcast = await self.get_broadcast_by_id(broadcast_id)
+            # Если есть логи, используем их, иначе данные из broadcasts
+            delivered = status_stats.get("sent", sent_count)
+            failed = status_stats.get("failed", failed_count)
+            blocked = status_stats.get("blocked", 0)
+
+            # Получаем общее количество получателей
+            total_recipients = await self.get_target_audience_count(
+                broadcast.get("target_users", "all")
+            )
 
             # Подсчет скорости отправки
             current_rate = 0
-            if broadcast and broadcast.get("started_at"):
+            if broadcast.get("started_at"):
                 started_at = broadcast["started_at"]
                 if isinstance(started_at, str):
                     started_at = datetime.fromisoformat(started_at)
 
                 elapsed_minutes = (datetime.now() - started_at).total_seconds() / 60
                 if elapsed_minutes > 0:
-                    sent_count = broadcast.get("sent_count", 0)
-                    current_rate = round(sent_count / elapsed_minutes, 1)
+                    current_rate = round(delivered / elapsed_minutes, 1)
 
             # Оценка оставшегося времени
             estimated_time = ""
-            if broadcast and broadcast.get("status") == "sending":
-                total_recipients = await self.get_target_audience_count(
-                    broadcast.get("target_users", "all")
-                )
-                sent_count = broadcast.get("sent_count", 0)
-                remaining = total_recipients - sent_count
+            if broadcast.get("status") == "sending":
+                remaining = total_recipients - delivered
 
                 if current_rate > 0 and remaining > 0:
                     remaining_minutes = remaining / current_rate
@@ -905,12 +982,10 @@ class Database:
                         estimated_time = f"{hours}ч {minutes}м"
 
             return {
-                "delivered": status_stats.get("sent", 0),
-                "failed": status_stats.get("failed", 0),
-                "blocked": status_stats.get("blocked", 0),
-                "total_recipients": await self.get_target_audience_count(
-                    broadcast.get("target_users", "all") if broadcast else "all"
-                ),
+                "delivered": delivered,
+                "failed": failed,
+                "blocked": blocked,
+                "total_recipients": total_recipients,
                 "current_rate": current_rate,
                 "estimated_time": estimated_time
             }

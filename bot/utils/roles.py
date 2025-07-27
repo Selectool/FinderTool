@@ -116,6 +116,12 @@ class TelegramUserPermissions:
         return role == TelegramUserRole.DEVELOPER.value
     
     @classmethod
+    def has_admin_access(cls, user_id: int, db_role: Optional[str] = None) -> bool:
+        """Проверить, имеет ли пользователь доступ к админ-панели"""
+        role = cls.get_user_role(user_id, db_role)
+        return role in ['admin', 'senior_admin', 'developer']
+
+    @classmethod
     def can_bypass_limits(cls, user_id: int, db_role: Optional[str] = None) -> bool:
         """Проверить, может ли пользователь обходить лимиты"""
         return cls.has_unlimited_access(user_id, db_role)

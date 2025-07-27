@@ -6,18 +6,18 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import BOT_TOKEN, API_ID, API_HASH
 from database.models import Database
 from bot.middlewares.database import DatabaseMiddleware
 from bot.middlewares.role_middleware import RoleMiddleware
-from bot.handlers import basic, channels, subscription, admin
+from bot.handlers import basic, channels, subscription, admin, reply_menu
 
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Настройка production логирования
+from bot.utils.production_logger import setup_production_logging
+setup_production_logging()
+
 logger = logging.getLogger(__name__)
 
 
@@ -40,8 +40,9 @@ async def main():
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     
-    # Инициализация диспетчера
-    dp = Dispatcher()
+    # Инициализация диспетчера с хранилищем состояний
+    storage = MemoryStorage()
+    dp = Dispatcher(storage=storage)
     
     # Инициализация базы данных
     db = Database()
@@ -51,16 +52,18 @@ async def main():
     # Подключение middleware
     dp.message.middleware(DatabaseMiddleware(db))
     dp.callback_query.middleware(DatabaseMiddleware(db))
+    dp.pre_checkout_query.middleware(DatabaseMiddleware(db))
 
     # Подключение middleware для ролей (после DatabaseMiddleware)
     dp.message.middleware(RoleMiddleware())
     dp.callback_query.middleware(RoleMiddleware())
     
     # Подключение роутеров
+    dp.include_router(admin.router)  # Админ роутер должен быть первым для FSM состояний
+    dp.include_router(reply_menu.router)  # Reply клавиатура
     dp.include_router(basic.router)
     dp.include_router(channels.router)
     dp.include_router(subscription.router)
-    dp.include_router(admin.router)
 
     # Подключение роутера разработчика
     from bot.handlers import developer

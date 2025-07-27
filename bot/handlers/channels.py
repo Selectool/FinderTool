@@ -10,6 +10,7 @@ from aiogram.filters import StateFilter
 
 from database.models import Database
 from services.channel_finder import ChannelFinder
+from bot.utils.production_logger import log_user_action, log_search, handle_error
 from config import API_ID, API_HASH, SESSION_NAME, SESSION_STRING, FREE_REQUESTS_LIMIT, TEXTS
 
 logger = logging.getLogger(__name__)
@@ -49,26 +50,29 @@ def has_channel_links(text: str) -> bool:
 
 @router.message(F.text & F.func(lambda message: has_channel_links(message.text)))
 async def handle_channel_search(message: Message, db: Database):
-    """Обработчик поиска похожих каналов"""
+    """Обработчик поиска похожих каналов с production-ready обработкой ошибок"""
     user_id = message.from_user.id
-    
-    # Проверяем, может ли пользователь сделать запрос
-    can_request = await db.can_make_request(user_id, FREE_REQUESTS_LIMIT)
-    
-    if not can_request:
-        await message.answer(
-            TEXTS["no_requests_left"].format(
-                limit=FREE_REQUESTS_LIMIT,
-                price=500  # Из config.py
-            ),
-            parse_mode="HTML"
-        )
-        return
-    
-    # Отправляем сообщение о начале поиска
-    processing_msg = await message.answer(TEXTS["processing"])
-    
+
     try:
+        # Логируем начало поиска
+        log_user_action(user_id, "SEARCH_START", message.text[:100])
+
+        # Проверяем, может ли пользователь сделать запрос
+        can_request = await db.can_make_request(user_id, FREE_REQUESTS_LIMIT)
+
+        if not can_request:
+            log_user_action(user_id, "SEARCH_BLOCKED", "No requests left")
+            await message.answer(
+                TEXTS["no_requests_left"].format(
+                    limit=FREE_REQUESTS_LIMIT,
+                    price=349  # Обновленная цена
+                ),
+                parse_mode="HTML"
+            )
+            return
+
+        # Отправляем сообщение о начале поиска
+        processing_msg = await message.answer(TEXTS["processing"])
         # Получаем ChannelFinder
         finder = await get_channel_finder()
         
@@ -80,7 +84,12 @@ async def handle_channel_search(message: Message, db: Database):
         
         # Обновляем счетчик запросов пользователя
         await db.update_user_requests(user_id)
-        
+
+        # Логируем результаты поиска
+        channels_found = results.get('total_found', 0)
+        input_channels = len(finder.extract_channel_usernames(message.text))
+        log_search(user_id, input_channels, channels_found)
+
         # Сохраняем запрос в базу
         if results['success']:
             await db.save_request(
@@ -88,7 +97,10 @@ async def handle_channel_search(message: Message, db: Database):
                 channels_input=finder.extract_channel_usernames(message.text),
                 results=results['channels']
             )
-        
+            log_user_action(user_id, "SEARCH_SUCCESS", f"Found {channels_found} channels")
+        else:
+            log_user_action(user_id, "SEARCH_FAILED", results.get('error', 'Unknown error'))
+
         # Отправляем результат
         await processing_msg.edit_text(
             response_text,
@@ -119,9 +131,9 @@ async def handle_channel_search(message: Message, db: Database):
                     db=db,
                     caption=f"📊 <b>Полный список найденных каналов</b>\n\n"
                            f"📈 Всего каналов: {results['total_found']}\n"
-                           f"🔍 Методы поиска: {', '.join(results.get('search_methods_used', []))}\n"
                            f"👥 Минимум подписчиков: {results.get('min_subscribers_filter', 1000):,}\n"
-                           f"📅 Дата экспорта: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+                           f"📅 Дата экспорта: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
+                           f"💡 CSV содержит: название, ссылку и количество подписчиков",
                     parse_mode="HTML"
                 )
 
@@ -135,16 +147,24 @@ async def handle_channel_search(message: Message, db: Database):
                 # Если ошибка с CSV, не прерываем основной процесс
         
     except Exception as e:
-        logger.error(f"Ошибка при поиске каналов: {e}")
-        await processing_msg.edit_text(TEXTS["error"])
+        # Production-ready обработка ошибок
+        await handle_error(e, user_id, "channel_search")
+        log_user_action(user_id, "SEARCH_ERROR", str(e))
+
+        try:
+            await processing_msg.edit_text(TEXTS["error"])
+        except Exception as edit_error:
+            # Если не можем отредактировать сообщение, отправляем новое
+            await message.answer(TEXTS["error"])
+            logger.error(f"Не удалось отредактировать сообщение: {edit_error}")
 
 
 
 
 
-@router.message(F.text)
+@router.message(F.text & ~F.text.startswith('/'))
 async def handle_other_messages(message: Message):
-    """Обработчик остальных текстовых сообщений"""
+    """Обработчик остальных текстовых сообщений (кроме команд)"""
     await message.answer(
         "🤖 Отправьте ссылку на канал или несколько ссылок для поиска похожих каналов.\n\n"
         "Поддерживаемые форматы:\n"

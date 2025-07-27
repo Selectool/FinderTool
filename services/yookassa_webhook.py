@@ -1,6 +1,7 @@
 """
 Webhook обработчики для ЮKassa
 Production-ready реализация для обработки уведомлений о статусах платежей
+Включает валидацию подписи, расчет комиссий и детальное логирование
 """
 import logging
 import json
@@ -8,8 +9,11 @@ import hashlib
 import hmac
 from typing import Dict, Any, Optional
 from datetime import datetime
+from decimal import Decimal
 
 from database.models import Database
+from .yookassa_client import yookassa_client
+from .commission_calculator import commission_calculator
 
 logger = logging.getLogger(__name__)
 
@@ -95,37 +99,81 @@ class YooKassaWebhookHandler:
             return False
     
     async def _handle_successful_payment(self, payment_object: Dict[str, Any]) -> bool:
-        """Обработка успешного платежа"""
+        """Обработка успешного платежа с учетом комиссий"""
         try:
             payment_id = payment_object.get('id')
-            amount_value = payment_object.get('amount', {}).get('value')
+            amount_data = payment_object.get('amount', {})
+            amount_value = Decimal(str(amount_data.get('value', '0')))
+            income_amount_data = payment_object.get('income_amount', {})
+            income_amount = Decimal(str(income_amount_data.get('value', '0'))) if income_amount_data else amount_value
+
             metadata = payment_object.get('metadata', {})
-            
-            # Извлекаем наш внутренний payment_id из metadata
-            internal_payment_id = metadata.get('payment_id')
+            payment_method = payment_object.get('payment_method', {}).get('type', 'unknown')
+
+            # Извлекаем данные из metadata
             user_id = metadata.get('user_id')
-            
-            if not internal_payment_id:
-                logger.error(f"❌ Отсутствует внутренний payment_id в metadata для платежа {payment_id}")
-                return False
-            
+            base_price = Decimal(str(metadata.get('base_price', '349')))
+            commission = Decimal(str(metadata.get('commission', '0')))
+
             logger.info(f"💰 Обработка успешного платежа через webhook:")
             logger.info(f"  - ЮKassa Payment ID: {payment_id}")
-            logger.info(f"  - Внутренний Payment ID: {internal_payment_id}")
             logger.info(f"  - User ID: {user_id}")
-            logger.info(f"  - Сумма: {amount_value}")
-            
-            # Завершаем платеж в нашей базе данных
-            success = await self.db.complete_payment(
-                payment_id=internal_payment_id,
-                provider_payment_id=payment_id
+            logger.info(f"  - Общая сумма: {amount_value} ₽")
+            logger.info(f"  - Получено (после комиссии ЮKassa): {income_amount} ₽")
+            logger.info(f"  - Базовая цена: {base_price} ₽")
+            logger.info(f"  - Наша комиссия: {commission} ₽")
+            logger.info(f"  - Метод оплаты: {payment_method}")
+
+            # Проверяем корректность сумм
+            expected_total = commission_calculator.calculate_amount_with_commission(
+                base_price,
+                payment_method if payment_method != 'unknown' else None
             )
-            
-            if success:
-                logger.info(f"✅ Платеж {internal_payment_id} успешно завершен через webhook")
-                return True
+
+            if abs(amount_value - expected_total) > Decimal('0.01'):
+                logger.warning(
+                    f"⚠️ Несоответствие сумм: ожидалось {expected_total}₽, "
+                    f"получено {amount_value}₽"
+                )
+
+            # Проверяем, что заказчик получает полную базовую сумму
+            if income_amount >= base_price:
+                logger.info(f"✅ Заказчик получает полную сумму: {income_amount}₽ >= {base_price}₽")
             else:
-                logger.error(f"❌ Не удалось завершить платеж {internal_payment_id} через webhook")
+                logger.warning(
+                    f"⚠️ Заказчик получает меньше базовой суммы: {income_amount}₽ < {base_price}₽"
+                )
+
+            # Активируем подписку пользователя
+            if user_id:
+                user_id_int = int(user_id)
+                success = await self.db.activate_subscription(
+                    user_id=user_id_int,
+                    months=1,
+                    payment_id=payment_id,
+                    amount_paid=float(amount_value),
+                    income_amount=float(income_amount)
+                )
+
+                if success:
+                    logger.info(f"✅ Подписка активирована для пользователя {user_id_int}")
+
+                    # Дополнительное логирование для мониторинга
+                    logger.info(
+                        f"📊 Статистика платежа: "
+                        f"пользователь={user_id_int}, "
+                        f"заплатил={amount_value}₽, "
+                        f"получили={income_amount}₽, "
+                        f"комиссия_юкасса={amount_value - income_amount}₽, "
+                        f"наша_комиссия={commission}₽"
+                    )
+
+                    return True
+                else:
+                    logger.error(f"❌ Не удалось активировать подписку для пользователя {user_id_int}")
+                    return False
+            else:
+                logger.error(f"❌ Отсутствует user_id в metadata для платежа {payment_id}")
                 return False
                 
         except Exception as e:

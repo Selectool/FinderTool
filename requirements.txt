@@ -7,6 +7,9 @@ aiosqlite==0.20.0
 cryptography==42.0.8
 prettytable==3.10.0
 
+# Payment System Dependencies
+yookassa==3.6.0
+
 # Web Admin Panel Dependencies
 fastapi==0.104.1
 uvicorn[standard]==0.24.0

@@ -27,6 +27,7 @@ class AdminMigrations:
             ('extend_users_table', self._extend_users_table),
             ('extend_broadcasts_table', self._extend_broadcasts_table),
             ('add_status_to_broadcasts', self._add_status_to_broadcasts),
+            ('add_title_to_broadcasts', self._add_title_to_broadcasts),
             ('insert_default_roles', self._insert_default_roles),
             ('create_default_admin_user', self._create_default_admin_user),
             ('add_telegram_user_roles', self._add_telegram_user_roles),
@@ -284,6 +285,22 @@ class AdminMigrations:
                     WHEN completed = 1 THEN 'completed'
                     ELSE 'pending'
                 END
+            """)
+
+        except aiosqlite.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise e
+
+    async def _add_title_to_broadcasts(self, db: aiosqlite.Connection):
+        """Добавить колонку title в таблицу broadcasts"""
+        try:
+            await db.execute("ALTER TABLE broadcasts ADD COLUMN title TEXT")
+
+            # Обновляем существующие записи, создавая title на основе target_users
+            await db.execute("""
+                UPDATE broadcasts
+                SET title = 'Рассылка ' || COALESCE(target_users, 'all')
+                WHERE title IS NULL
             """)
 
         except aiosqlite.OperationalError as e:

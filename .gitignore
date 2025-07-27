@@ -45,6 +45,8 @@ local_settings.py
 generate_session.py
 session_generator.py
 create_session.py
+get_ngrok_url.py
+clean_test_payments.py
 
 # Токены и ключи
 *token*
@@ -116,8 +118,12 @@ PAYMENT_SYSTEM_FIXES.md
 DEPLOYMENT_CHECKLIST.md
 session_generation_guide.md
 YOOKASSA_INTEGRATION_GUIDE.md
+REPOSITORY_CLEANUP_REPORT.md
 DEVELOPMENT_*.md
 TESTING_*.md
+BROADCAST_SYSTEM_BOT.md
+USER_MANAGEMENT_BOT.md
+YOOKASSA_LIVE_PAYMENT_FIX.md
 
 # ============ UPLOADS & MEDIA ============
 uploads/

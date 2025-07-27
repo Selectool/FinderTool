@@ -1,15 +1,19 @@
 """
 Сервис для работы с платежами ЮKassa
 Production-ready реализация с детальным логированием и обработкой ошибок
+Включает расчет комиссий и интеграцию с ЮKassa API
 """
 import uuid
 import logging
 import json
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from datetime import datetime
+from decimal import Decimal
 
 from aiogram.types import LabeledPrice, PreCheckoutQuery, SuccessfulPayment
 from database.models import Database
+from .commission_calculator import calculate_subscription_price_with_commission, PaymentMethod
+from .yookassa_client import yookassa_client
 
 logger = logging.getLogger(__name__)
 
@@ -57,25 +61,49 @@ class YooKassaPaymentService:
         """Генерировать уникальный ID платежа"""
         return str(uuid.uuid4())
 
-    async def create_invoice_data(self, user_id: int, amount: int,
+    async def create_invoice_data(self, user_id: int, amount: Optional[int] = None,
                                 description: str = "Подписка Channel Finder Bot",
-                                subscription_months: int = 1) -> Dict[str, Any]:
-        """Создать данные для инвойса с детальным логированием"""
+                                subscription_months: int = 1,
+                                payment_method: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Создать данные для инвойса с расчетом комиссии
+
+        Args:
+            user_id: ID пользователя
+            amount: Сумма в копейках (если не указана, рассчитывается автоматически)
+            description: Описание платежа
+            subscription_months: Количество месяцев подписки
+            payment_method: Предпочтительный метод оплаты
+        """
 
         try:
             # Валидация входных данных
-            if amount <= 0:
-                raise ValueError(f"Сумма платежа должна быть положительной: {amount}")
-
             if subscription_months <= 0:
                 raise ValueError(f"Количество месяцев должно быть положительным: {subscription_months}")
+
+            # Рассчитываем цену с комиссией
+            base_price, price_with_commission, commission_amount = calculate_subscription_price_with_commission(
+                payment_method
+            )
+
+            # Если amount не указан, используем рассчитанную цену
+            if amount is None:
+                amount = int(price_with_commission * 100)  # Конвертируем в копейки
+
+            # Валидация суммы
+            if amount <= 0:
+                raise ValueError(f"Сумма платежа должна быть положительной: {amount}")
 
             # Генерируем уникальный payload для платежа
             payment_id = self.generate_payment_id()
             payload = f"subscription_{subscription_months}m_{payment_id}"
 
             logger.info(f"Создание платежа для пользователя {user_id}:")
-            logger.info(f"  - Сумма: {amount} копеек ({amount/100:.2f} ₽)")
+            logger.info(f"  - Базовая цена: {base_price} ₽")
+            logger.info(f"  - Комиссия: {commission_amount} ₽")
+            logger.info(f"  - К доплате: {price_with_commission} ₽")
+            logger.info(f"  - Сумма в копейках: {amount}")
+            logger.info(f"  - Метод оплаты: {payment_method or 'auto'}")
             logger.info(f"  - Месяцев: {subscription_months}")
             logger.info(f"  - Payment ID: {payment_id}")
             logger.info(f"  - Payload: {payload}")
@@ -92,17 +120,24 @@ class YooKassaPaymentService:
 
             logger.info(f"✅ Платеж {payment_id} сохранен в базу данных")
 
+            # Создаем описание с информацией о комиссии
+            detailed_description = (
+                f"{description}\n"
+                f"Базовая цена: {base_price} ₽\n"
+                f"Комиссия платежной системы: {commission_amount} ₽"
+            )
+
             # Создаем массив цен для Telegram API (в копейках)
             prices = [LabeledPrice(label=description, amount=amount)]
 
             invoice_data = {
                 "title": "Подписка Channel Finder Bot",
-                "description": description,
+                "description": detailed_description,
                 "payload": payload,
                 "provider_token": self.provider_token,
                 "currency": self.currency,
                 "prices": prices,
-                "need_phone_number": False,  # Убираем требование телефона для упрощения
+                "need_phone_number": False,
                 "send_phone_number_to_provider": False,
                 "provider_data": self.provider_data
             }
@@ -110,6 +145,7 @@ class YooKassaPaymentService:
             # Логируем данные инвойса (без токена и с безопасной сериализацией)
             safe_invoice_data = {k: v for k, v in invoice_data.items() if k not in ["provider_token", "prices"]}
             safe_invoice_data["prices_info"] = f"{len(invoice_data['prices'])} позиций, общая сумма: {amount} копеек"
+            safe_invoice_data["commission_info"] = f"Базовая цена: {base_price}₽, комиссия: {commission_amount}₽"
             logger.info(f"Данные инвойса: {json.dumps(safe_invoice_data, ensure_ascii=False, indent=2)}")
 
             return invoice_data
@@ -217,6 +253,55 @@ class YooKassaPaymentService:
         except Exception as e:
             logger.error(f"❌ Ошибка при обработке успешного платежа: {e}")
             return False
+
+    async def create_yookassa_payment(
+        self,
+        user_id: int,
+        payment_method: Optional[str] = None
+    ) -> Tuple[str, Decimal, Decimal]:
+        """
+        Создать платеж через ЮKassa API с расчетом комиссии
+
+        Args:
+            user_id: ID пользователя
+            payment_method: Предпочтительный метод оплаты
+
+        Returns:
+            Кортеж (payment_url, базовая_цена, цена_с_комиссией)
+        """
+        try:
+            logger.info(f"Создание платежа ЮKassa для пользователя {user_id}")
+
+            # Создаем платеж через ЮKassa клиент
+            payment, base_price, price_with_commission = await yookassa_client.create_subscription_payment(
+                user_id=user_id,
+                payment_method=payment_method
+            )
+
+            # Сохраняем платеж в нашу БД
+            payment_id = self.generate_payment_id()
+            payload = f"yookassa_subscription_{payment_id}"
+
+            await self.db.create_payment(
+                user_id=user_id,
+                amount=int(price_with_commission * 100),  # В копейках
+                currency="RUB",
+                payment_id=payment_id,
+                invoice_payload=payload,
+                subscription_months=1
+            )
+
+            logger.info(
+                f"✅ Платеж ЮKassa создан: ID {payment.id}, "
+                f"URL {payment.confirmation.confirmation_url}, "
+                f"сумма {price_with_commission}₽"
+            )
+
+            return payment.confirmation.confirmation_url, base_price, price_with_commission
+
+        except Exception as e:
+            logger.error(f"Ошибка создания платежа ЮKassa для пользователя {user_id}: {e}")
+            raise
 
     async def get_payment_info(self, payment_id: str) -> Optional[Dict[str, Any]]:
         """Получить информацию о платеже"""

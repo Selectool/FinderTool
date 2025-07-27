@@ -218,6 +218,7 @@ async def create_broadcast(
 
         # Создаем рассылку в базе данных
         broadcast_id = await db.create_broadcast(
+            title=request.title,
             message_text=request.message_text,
             parse_mode=request.parse_mode,
             target_users=request.target_type,

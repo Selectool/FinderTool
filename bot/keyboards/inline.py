@@ -53,6 +53,24 @@ def get_back_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def get_audience_selection_keyboard() -> InlineKeyboardMarkup:
+    """Выбор аудитории для рассылки"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="👥 Все пользователи", callback_data="audience_all")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔥 Активные пользователи", callback_data="audience_active")
+    )
+    builder.row(
+        InlineKeyboardButton(text="💎 Подписчики", callback_data="audience_subscribers")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_admin")
+    )
+    return builder.as_markup()
+
+
 def get_broadcast_confirm_keyboard() -> InlineKeyboardMarkup:
     """Подтверждение рассылки"""
     builder = InlineKeyboardBuilder()
