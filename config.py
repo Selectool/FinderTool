@@ -2,6 +2,7 @@
 Конфигурация бота
 """
 import os
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -23,8 +24,62 @@ ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0"))
 DEVELOPER_IDS = [5699315855]  # ID разработчика
 
 # Настройки подписки
-SUBSCRIPTION_PRICE = int(os.getenv("SUBSCRIPTION_PRICE", "500"))
+SUBSCRIPTION_PRICE = int(os.getenv("SUBSCRIPTION_PRICE", "349"))
 FREE_REQUESTS_LIMIT = int(os.getenv("FREE_REQUESTS_LIMIT", "3"))
+
+# ЮKassa настройки
+YOOKASSA_MODE = os.getenv("YOOKASSA_MODE", "TEST")
+YOOKASSA_TEST_TOKEN = os.getenv("YOOKASSA_TEST_TOKEN", "381764678:TEST:132745")
+YOOKASSA_LIVE_TOKEN = os.getenv("YOOKASSA_LIVE_TOKEN", "390540012:LIVE:74136")
+YOOKASSA_CURRENCY = os.getenv("YOOKASSA_CURRENCY", "RUB")
+YOOKASSA_PRODUCT_DESCRIPTION = os.getenv("YOOKASSA_PRODUCT_DESCRIPTION", "Подписка Channel Finder Bot на месяц")
+YOOKASSA_VAT_CODE = int(os.getenv("YOOKASSA_VAT_CODE", "1"))
+
+# Получение активного токена в зависимости от режима
+YOOKASSA_PROVIDER_TOKEN = YOOKASSA_TEST_TOKEN if YOOKASSA_MODE == "TEST" else YOOKASSA_LIVE_TOKEN
+
+# Проверка корректности токена для выбранного режима
+if YOOKASSA_MODE == "LIVE" and not YOOKASSA_LIVE_TOKEN:
+    raise ValueError("LIVE режим требует установки YOOKASSA_LIVE_TOKEN")
+if YOOKASSA_MODE == "TEST" and not YOOKASSA_TEST_TOKEN:
+    raise ValueError("TEST режим требует установки YOOKASSA_TEST_TOKEN")
+
+# Проверка формата токена
+if YOOKASSA_MODE == "LIVE" and ":LIVE:" not in YOOKASSA_LIVE_TOKEN:
+    raise ValueError("LIVE токен должен содержать ':LIVE:' для продакшн режима")
+if YOOKASSA_MODE == "TEST" and ":TEST:" not in YOOKASSA_TEST_TOKEN:
+    raise ValueError("TEST токен должен содержать ':TEST:' для тестового режима")
+
+# Данные для формирования чека (provider_data) - исправленный формат для Telegram Bot API
+YOOKASSA_PROVIDER_DATA = json.dumps({
+    "receipt": {
+        "items": [
+            {
+                "description": YOOKASSA_PRODUCT_DESCRIPTION,
+                "quantity": "1.00",
+                "amount": {
+                    "value": f"{SUBSCRIPTION_PRICE:.2f}",
+                    "currency": YOOKASSA_CURRENCY
+                },
+                "vat_code": YOOKASSA_VAT_CODE,
+                "payment_mode": "full_payment",
+                "payment_subject": "service"
+            }
+        ],
+        "customer": {
+            "email": "support@findertool.ru"
+        }
+    }
+}, ensure_ascii=False)
+
+# Логирование текущего режима ЮKassa
+import logging
+logger = logging.getLogger(__name__)
+logger.info(f"ЮKassa режим: {YOOKASSA_MODE}")
+if YOOKASSA_MODE == "LIVE":
+    logger.warning("⚠️ ВНИМАНИЕ: Работа в ПРОДАКШН режиме с реальными платежами!")
+else:
+    logger.info("🧪 Работа в тестовом режиме ЮKassa")
 
 # Сессия Telethon
 SESSION_NAME = os.getenv("SESSION_NAME", "bot_session")
@@ -33,7 +88,7 @@ SESSION_STRING = os.getenv("SESSION_STRING", "")
 # Тексты бота
 TEXTS = {
     "start": """
-🤖 <b>Добро пожаловать в Channel Finder Bot!</b>
+🤖 <b>Добро пожаловать в FinderTool!</b>
 
 Я помогу вам найти похожие каналы в Telegram.
 
@@ -89,7 +144,7 @@ TEXTS = {
     "error": "❌ Произошла ошибка. Попробуйте позже.",
     
     "subscription_info": """
-💎 <b>Подписка Channel Finder Bot</b>
+💎 <b>Подписка FinderTool</b>
 
 <b>Стоимость:</b> {price}₽/месяц
 <b>Преимущества:</b>

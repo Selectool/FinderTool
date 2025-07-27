@@ -20,7 +20,7 @@ class Database:
             # Проверяем, существуют ли основные таблицы
             cursor = await db.execute("""
                 SELECT name FROM sqlite_master
-                WHERE type='table' AND name IN ('users', 'requests', 'broadcasts')
+                WHERE type='table' AND name IN ('users', 'requests', 'broadcasts', 'payments')
             """)
             existing_tables = {row[0] for row in await cursor.fetchall()}
 
@@ -36,7 +36,12 @@ class Database:
                         requests_used INTEGER DEFAULT 0,
                         is_subscribed BOOLEAN DEFAULT FALSE,
                         subscription_end TIMESTAMP,
-                        last_request TIMESTAMP
+                        last_request TIMESTAMP,
+                        payment_provider TEXT DEFAULT 'yookassa',
+                        last_payment_date TIMESTAMP,
+                        role TEXT DEFAULT 'user',
+                        blocked BOOLEAN DEFAULT FALSE,
+                        bot_blocked BOOLEAN DEFAULT FALSE
                     )
                 """)
 
@@ -64,7 +69,29 @@ class Database:
                     )
                 """)
 
+            if 'payments' not in existing_tables:
+                await db.execute("""
+                    CREATE TABLE payments (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        payment_id TEXT UNIQUE,
+                        amount INTEGER NOT NULL,
+                        currency TEXT DEFAULT 'RUB',
+                        status TEXT DEFAULT 'pending',
+                        provider TEXT DEFAULT 'yookassa',
+                        provider_payment_id TEXT,
+                        invoice_payload TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        completed_at TIMESTAMP,
+                        subscription_months INTEGER DEFAULT 1,
+                        FOREIGN KEY (user_id) REFERENCES users (user_id)
+                    )
+                """)
+
             await db.commit()
+
+        # Запускаем миграции для обновления существующих таблиц
+        await self._run_migrations()
 
         # Запускаем миграции для админ-панели только если нужно
         try:
@@ -72,6 +99,33 @@ class Database:
             await run_admin_migrations(self.db_path)
         except Exception as e:
             logger.error(f"Ошибка выполнения миграций админ-панели: {e}")
+
+    async def _run_migrations(self):
+        """Выполнить миграции для обновления существующих таблиц"""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Проверяем, какие колонки существуют в таблице users
+            cursor = await db.execute("PRAGMA table_info(users)")
+            existing_columns = {row[1] for row in await cursor.fetchall()}
+
+            # Список новых колонок для добавления
+            new_columns = {
+                'payment_provider': 'TEXT DEFAULT "yookassa"',
+                'last_payment_date': 'TIMESTAMP',
+                'role': 'TEXT DEFAULT "user"',
+                'blocked': 'BOOLEAN DEFAULT FALSE',
+                'bot_blocked': 'BOOLEAN DEFAULT FALSE'
+            }
+
+            # Добавляем отсутствующие колонки
+            for column_name, column_def in new_columns.items():
+                if column_name not in existing_columns:
+                    try:
+                        await db.execute(f"ALTER TABLE users ADD COLUMN {column_name} {column_def}")
+                        logger.info(f"Добавлена колонка {column_name} в таблицу users")
+                    except Exception as e:
+                        logger.error(f"Ошибка при добавлении колонки {column_name}: {e}")
+
+            await db.commit()
 
     async def get_user(self, user_id: int) -> Optional[dict]:
         """Получить пользователя"""
@@ -110,15 +164,16 @@ class Database:
             """, (datetime.now(), user_id))
             await db.commit()
 
-    async def subscribe_user(self, user_id: int, months: int = 1):
+    async def subscribe_user(self, user_id: int, months: int = 1, provider: str = "yookassa"):
         """Оформить подписку пользователю"""
         end_date = datetime.now() + timedelta(days=30 * months)
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                UPDATE users 
-                SET is_subscribed = TRUE, subscription_end = ?
+                UPDATE users
+                SET is_subscribed = TRUE, subscription_end = ?,
+                    last_payment_date = ?, payment_provider = ?
                 WHERE user_id = ?
-            """, (end_date, user_id))
+            """, (end_date, datetime.now(), provider, user_id))
             await db.commit()
 
     async def check_subscription(self, user_id: int) -> bool:
@@ -160,7 +215,7 @@ class Database:
         # Проверяем лимит бесплатных запросов
         return user['requests_used'] < free_limit
 
-    async def save_request(self, user_id: int, channels_input: List[str], 
+    async def save_request(self, user_id: int, channels_input: List[str],
                           results: List[dict]):
         """Сохранить запрос в базу"""
         async with aiosqlite.connect(self.db_path) as db:
@@ -169,6 +224,113 @@ class Database:
                 VALUES (?, ?, ?)
             """, (user_id, json.dumps(channels_input), json.dumps(results)))
             await db.commit()
+
+    # Методы для работы с платежами ЮKassa
+
+    async def create_payment(self, user_id: int, amount: int, currency: str = "RUB",
+                           payment_id: str = None, invoice_payload: str = None,
+                           subscription_months: int = 1) -> str:
+        """Создать запись о платеже"""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                INSERT INTO payments (user_id, payment_id, amount, currency,
+                                    invoice_payload, subscription_months)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (user_id, payment_id, amount, currency, invoice_payload, subscription_months))
+            await db.commit()
+            return str(cursor.lastrowid)
+
+    async def get_payment(self, payment_id: str = None, db_id: int = None) -> Optional[dict]:
+        """Получить платеж по ID"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            if payment_id:
+                cursor = await db.execute("""
+                    SELECT * FROM payments WHERE payment_id = ?
+                """, (payment_id,))
+            elif db_id:
+                cursor = await db.execute("""
+                    SELECT * FROM payments WHERE id = ?
+                """, (db_id,))
+            else:
+                return None
+
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+    async def update_payment_status(self, payment_id: str, status: str,
+                                  provider_payment_id: str = None):
+        """Обновить статус платежа"""
+        async with aiosqlite.connect(self.db_path) as db:
+            if provider_payment_id:
+                await db.execute("""
+                    UPDATE payments
+                    SET status = ?, provider_payment_id = ?, completed_at = ?
+                    WHERE payment_id = ?
+                """, (status, provider_payment_id, datetime.now(), payment_id))
+            else:
+                await db.execute("""
+                    UPDATE payments
+                    SET status = ?, completed_at = ?
+                    WHERE payment_id = ?
+                """, (status, datetime.now(), payment_id))
+            await db.commit()
+
+    async def complete_payment(self, payment_id: str, provider_payment_id: str = None):
+        """Завершить платеж и активировать подписку"""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Получаем информацию о платеже
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("""
+                SELECT user_id, subscription_months FROM payments
+                WHERE payment_id = ?
+            """, (payment_id,))
+            payment = await cursor.fetchone()
+
+            if not payment:
+                return False
+
+            # Обновляем статус платежа
+            await db.execute("""
+                UPDATE payments
+                SET status = 'completed', provider_payment_id = ?, completed_at = ?
+                WHERE payment_id = ?
+            """, (provider_payment_id, datetime.now(), payment_id))
+
+            # Активируем подписку пользователю
+            end_date = datetime.now() + timedelta(days=30 * payment['subscription_months'])
+            await db.execute("""
+                UPDATE users
+                SET is_subscribed = TRUE, subscription_end = ?,
+                    last_payment_date = ?, payment_provider = 'yookassa'
+                WHERE user_id = ?
+            """, (end_date, datetime.now(), payment['user_id']))
+
+            await db.commit()
+            return True
+
+    async def get_user_payments(self, user_id: int) -> List[dict]:
+        """Получить все платежи пользователя"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("""
+                SELECT * FROM payments
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+            """, (user_id,))
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    async def update_payment_status(self, payment_id: str, status: str) -> bool:
+        """Обновить статус платежа"""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                UPDATE payments
+                SET status = ?
+                WHERE payment_id = ?
+            """, (status, payment_id))
+            await db.commit()
+            return cursor.rowcount > 0
 
     async def get_all_users_for_broadcast(self) -> List[dict]:
         """Получить всех пользователей для рассылки"""
