@@ -1482,6 +1482,64 @@ async def handle_user_search(message: Message, state: FSMContext, db: Database):
         await state.clear()
 
 
+@router.message(Command("stats"))
+async def cmd_stats(message: Message, db: Database):
+    """Команда детальной статистики (только для админов)"""
+    if not await is_admin(message.from_user.id, db):
+        await message.answer("❌ У вас нет прав для выполнения этой команды.")
+        return
+
+    try:
+        # Получаем базовую статистику
+        stats = await db.get_stats()
+
+        # Получаем дополнительную статистику
+        total_requests = await db.get_total_requests_count()
+        avg_requests = total_requests / max(stats['total_users'], 1)
+
+        # Получаем статистику рассылок
+        try:
+            broadcast_stats = await db.get_broadcasts_stats()
+        except:
+            broadcast_stats = {
+                'total': 0,
+                'completed': 0,
+                'total_sent': 0
+            }
+
+        stats_text = f"""
+📊 <b>Детальная статистика FinderTool</b>
+
+👥 <b>Пользователи:</b>
+• Всего зарегистрировано: {stats['total_users']}
+• Активных подписчиков: {stats['active_subscribers']}
+• Заблокированных: {stats.get('blocked_users', 0)}
+
+🔍 <b>Активность:</b>
+• Всего запросов: {total_requests}
+• Среднее на пользователя: {avg_requests:.1f}
+• Запросов сегодня: {stats['requests_today']}
+
+📈 <b>Конверсия:</b>
+• В подписку: {(stats['active_subscribers'] / max(stats['total_users'], 1) * 100):.1f}%
+• Активность: {(stats['requests_today'] / max(stats['total_users'], 1) * 100):.1f}%
+
+📢 <b>Рассылки:</b>
+• Всего рассылок: {broadcast_stats.get('total', 0)}
+• Завершенных: {broadcast_stats.get('completed', 0)}
+• Отправлено сообщений: {broadcast_stats.get('total_sent', 0)}
+
+💡 Используйте /admin для доступа к другим функциям
+        """
+
+        await message.answer(stats_text.strip(), parse_mode="HTML")
+        logger.info(f"Админ {message.from_user.id} запросил детальную статистику")
+
+    except Exception as e:
+        logger.error(f"Ошибка при получении детальной статистики: {e}")
+        await message.answer("❌ Произошла ошибка при получении статистики.")
+
+
 @router.message(Command("payment_stats"))
 async def cmd_payment_stats(message: Message, db: Database):
     """Команда статистики платежей (только для админов)"""
