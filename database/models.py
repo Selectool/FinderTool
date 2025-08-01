@@ -1,5 +1,5 @@
 """
-Модели базы данных
+Модели базы данных с production-ready функциональностью
 """
 import aiosqlite
 from datetime import datetime, timedelta
@@ -9,10 +9,25 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Импортируем production-ready компоненты
+try:
+    from .production_manager import ProductionDatabaseManager
+    from .monitoring import QueryTimer, monitor_query
+    PRODUCTION_FEATURES_AVAILABLE = True
+except ImportError:
+    PRODUCTION_FEATURES_AVAILABLE = False
+    logger.warning("Production-ready функции базы данных недоступны")
+
 
 class Database:
     def __init__(self, db_path: str = "bot.db"):
         self.db_path = db_path
+
+        # Инициализируем production-ready менеджер если доступен
+        if PRODUCTION_FEATURES_AVAILABLE:
+            self.production_manager = ProductionDatabaseManager(db_path)
+        else:
+            self.production_manager = None
 
     async def init_db(self):
         """Инициализация базы данных"""
