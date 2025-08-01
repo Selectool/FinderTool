@@ -1,8 +1,48 @@
+# Nixpacks конфигурация для Telegram Channel Finder Bot
 providers = ["python"]
+
+[phases.setup]
+nixPkgs = [
+    "python311",
+    "pip",
+    # Системные библиотеки для psutil
+    "gcc",
+    "glibc",
+    # Библиотеки для cryptography
+    "openssl",
+    "libffi",
+    "pkg-config",
+    # Библиотеки для reportlab (PDF генерация)
+    "freetype",
+    "fontconfig",
+    # Дополнительные утилиты
+    "bash",
+    "coreutils"
+]
+
+[phases.install]
+cmd = "pip install --no-cache-dir -r requirements-production.txt"
+
+[phases.build]
+cmd = "chmod +x start.sh"
 
 [start]
 cmd = "./start.sh"
 
 [variables]
+# Python настройки
 PYTHONUNBUFFERED = "1"
+PYTHONDONTWRITEBYTECODE = "1"
+PYTHONPATH = "."
+
+# Окружение
 ENVIRONMENT = "production"
+
+# Настройки базы данных
+DATABASE_PATH = "bot.db"
+
+# Настройки логирования
+LOG_LEVEL = "INFO"
+
+# Настройки для production
+NIXPACKS_PLAN_PROVIDERS = "python"
