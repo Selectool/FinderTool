@@ -8,12 +8,19 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from config import BOT_TOKEN, API_ID, API_HASH
+from config import BOT_TOKEN, API_ID, API_HASH, IS_PRODUCTION
 from database.models import Database
 from database.production_manager import init_production_database
 from bot.middlewares.database import DatabaseMiddleware
 from bot.middlewares.role_middleware import RoleMiddleware
 from bot.handlers import basic, channels, subscription, admin, reply_menu
+
+# Production-ready imports
+from bot.middlewares.production_security import (
+    RateLimitMiddleware, SecurityMiddleware,
+    TimeoutMiddleware, ProductionMonitoringMiddleware
+)
+from bot.utils.health_check import health_manager
 
 # Настройка production логирования
 from bot.utils.production_logger import setup_production_logging
@@ -60,7 +67,30 @@ async def main():
     await db.init_db()
     logger.info("Legacy Database инициализирована для совместимости")
     
-    # Подключение middleware
+    # Production-ready middleware stack
+    if IS_PRODUCTION:
+        logger.info("🔒 Подключение production security middleware...")
+
+        # Security middleware (первый уровень защиты)
+        dp.message.middleware(SecurityMiddleware())
+        dp.callback_query.middleware(SecurityMiddleware())
+
+        # Rate limiting middleware
+        dp.message.middleware(RateLimitMiddleware())
+        dp.callback_query.middleware(RateLimitMiddleware())
+
+        # Timeout middleware
+        dp.message.middleware(TimeoutMiddleware())
+        dp.callback_query.middleware(TimeoutMiddleware())
+
+        # Monitoring middleware
+        monitoring_middleware = ProductionMonitoringMiddleware()
+        dp.message.middleware(monitoring_middleware)
+        dp.callback_query.middleware(monitoring_middleware)
+
+        logger.info("✅ Production middleware подключены")
+
+    # Основные middleware
     dp.message.middleware(DatabaseMiddleware(db))
     dp.callback_query.middleware(DatabaseMiddleware(db))
     dp.pre_checkout_query.middleware(DatabaseMiddleware(db))
@@ -89,14 +119,34 @@ async def main():
     try:
         # Получаем информацию о боте
         bot_info = await bot.get_me()
-        logger.info(f"Бот запущен: @{bot_info.username}")
-        
+        logger.info(f"🤖 Бот запущен: @{bot_info.username} (ID: {bot_info.id})")
+
+        # Production health check при запуске
+        if IS_PRODUCTION:
+            logger.info("🏥 Выполняем начальную проверку здоровья системы...")
+            health_status = await health_manager.perform_health_check()
+
+            if health_status['status'] == 'unhealthy':
+                logger.error("❌ Система не готова к работе! Проверьте компоненты:")
+                for component, status in health_status['components'].items():
+                    if status.get('status') != 'healthy':
+                        logger.error(f"  - {component}: {status.get('error', 'unknown error')}")
+                return
+            else:
+                logger.info(f"✅ Система готова к работе: {health_status['status']}")
+
         # Запуск polling
+        logger.info("🚀 Запуск polling...")
         await dp.start_polling(bot)
-        
+
     except Exception as e:
-        logger.error(f"Ошибка при запуске бота: {e}")
+        logger.error(f"❌ Критическая ошибка при запуске бота: {e}")
+        if IS_PRODUCTION:
+            # В production логируем дополнительную информацию
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
     finally:
+        logger.info("🔄 Закрытие соединений...")
         await bot.session.close()
 
 
