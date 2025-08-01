@@ -10,6 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import BOT_TOKEN, API_ID, API_HASH
 from database.models import Database
+from database.production_manager import init_production_database
 from bot.middlewares.database import DatabaseMiddleware
 from bot.middlewares.role_middleware import RoleMiddleware
 from bot.handlers import basic, channels, subscription, admin, reply_menu
@@ -44,10 +45,20 @@ async def main():
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
     
-    # Инициализация базы данных
+    # Production-ready инициализация базы данных
+    logger.info("Инициализация production-ready базы данных...")
+    db_info = await init_production_database()
+
+    if db_info is None:
+        logger.error("Критическая ошибка инициализации базы данных!")
+        return
+
+    logger.info(f"База данных инициализирована: {db_info.get('database_type', 'unknown')}")
+
+    # Инициализация legacy Database для совместимости
     db = Database()
     await db.init_db()
-    logger.info("База данных инициализирована")
+    logger.info("Legacy Database инициализирована для совместимости")
     
     # Подключение middleware
     dp.message.middleware(DatabaseMiddleware(db))
