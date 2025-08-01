@@ -1,11 +1,6 @@
 # Telegram Channel Finder Bot - Production Dockerfile
 FROM python:3.11-slim
 
-# Установка системных зависимостей
-RUN apt-get update && apt-get install -y \
-    supervisor \
-    && rm -rf /var/lib/apt/lists/*
-
 # Создание рабочей директории
 WORKDIR /app
 
@@ -19,32 +14,50 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Создание директорий для логов и данных
-RUN mkdir -p /var/log/supervisor /app/logs /app/backups /app/uploads
+RUN mkdir -p /app/logs /app/backups /app/uploads
 
-# Создание конфигурации supervisor
-RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'nodaemon=true' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'user=root' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'logfile=/var/log/supervisor/supervisord.log' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'pidfile=/var/run/supervisord.pid' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo '' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo '[program:telegram_bot]' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'command=python main.py' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'directory=/app' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'autostart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'autorestart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'stderr_logfile=/var/log/supervisor/telegram_bot.err.log' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'stdout_logfile=/var/log/supervisor/telegram_bot.out.log' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'user=root' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo '' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo '[program:admin_panel]' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'command=python run_admin.py' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'directory=/app' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'autostart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'autorestart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'stderr_logfile=/var/log/supervisor/admin_panel.err.log' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'stdout_logfile=/var/log/supervisor/admin_panel.out.log' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'user=root' >> /etc/supervisor/conf.d/supervisord.conf
+# Создание скрипта запуска
+RUN echo '#!/bin/bash' > /app/start.sh && \
+    echo 'set -e' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo 'echo "🚀 Запуск Telegram Channel Finder Bot..."' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Запуск бота в фоне' >> /app/start.sh && \
+    echo 'echo "📱 Запуск Telegram бота..."' >> /app/start.sh && \
+    echo 'python main.py &' >> /app/start.sh && \
+    echo 'BOT_PID=$!' >> /app/start.sh && \
+    echo 'echo "✅ Telegram бот запущен (PID: $BOT_PID)"' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Небольшая задержка' >> /app/start.sh && \
+    echo 'sleep 3' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Запуск админ-панели' >> /app/start.sh && \
+    echo 'echo "🌐 Запуск админ-панели..."' >> /app/start.sh && \
+    echo 'python run_admin.py &' >> /app/start.sh && \
+    echo 'ADMIN_PID=$!' >> /app/start.sh && \
+    echo 'echo "✅ Админ-панель запущена (PID: $ADMIN_PID)"' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo 'echo "🎉 Все сервисы запущены успешно!"' >> /app/start.sh && \
+    echo 'echo "📱 Telegram бот: PID $BOT_PID"' >> /app/start.sh && \
+    echo 'echo "🌐 Админ-панель: http://localhost:8080 (PID $ADMIN_PID)"' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Функция для корректного завершения' >> /app/start.sh && \
+    echo 'cleanup() {' >> /app/start.sh && \
+    echo '    echo "🛑 Получен сигнал завершения..."' >> /app/start.sh && \
+    echo '    echo "⏹️ Остановка Telegram бота (PID: $BOT_PID)..."' >> /app/start.sh && \
+    echo '    kill $BOT_PID 2>/dev/null || true' >> /app/start.sh && \
+    echo '    echo "⏹️ Остановка админ-панели (PID: $ADMIN_PID)..."' >> /app/start.sh && \
+    echo '    kill $ADMIN_PID 2>/dev/null || true' >> /app/start.sh && \
+    echo '    echo "✅ Все процессы остановлены"' >> /app/start.sh && \
+    echo '    exit 0' >> /app/start.sh && \
+    echo '}' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Обработка сигналов' >> /app/start.sh && \
+    echo 'trap cleanup SIGTERM SIGINT' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Ожидание завершения процессов' >> /app/start.sh && \
+    echo 'wait' >> /app/start.sh && \
+    chmod +x /app/start.sh
 
 # Открытие порта для админ-панели
 EXPOSE 8080
@@ -53,5 +66,5 @@ EXPOSE 8080
 ENV PYTHONUNBUFFERED=1
 ENV ENVIRONMENT=production
 
-# Запуск supervisor для управления процессами
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# Запуск скрипта
+CMD ["/app/start.sh"]
