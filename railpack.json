@@ -1,0 +1,22 @@
+{
+  "deploy": {
+    "startCommand": "python main.py",
+    "healthcheckCommand": "python -c \"import requests; requests.get('http://localhost:8000/health', timeout=5)\"",
+    "restartPolicy": "always"
+  },
+  "build": {
+    "env": {
+      "PYTHONUNBUFFERED": "1",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+      "PIP_DEFAULT_TIMEOUT": "100"
+    }
+  },
+  "runtime": {
+    "env": {
+      "ENVIRONMENT": "production",
+      "LOG_LEVEL": "INFO",
+      "DATABASE_PATH": "bot.db"
+    }
+  }
+}

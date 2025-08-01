@@ -172,14 +172,27 @@ desktop.ini
 #*#
 
 # ============ DEPLOYMENT ============
-# Docker (если используется)
-.dockerignore
-docker-compose.override.yml
-.docker/
+# Railway/Railpack specific
+.railway/
+railway.toml
+railway.json
+
+# Docker (legacy - removed for Railpack)
+# .dockerignore
+# docker-compose.override.yml
+# .docker/
 
 # Kubernetes
 k8s/
 kubernetes/
+
+# Nixpacks (legacy - not used with Railpack)
+nixpacks.toml
+.nixpacks/
+
+# Paketo Buildpacks (legacy - not used with Railpack)
+project.toml
+buildpack.yml
 
 # ============ MONITORING & ANALYTICS ============
 # Метрики и аналитика
