@@ -1,0 +1,36 @@
+# Docker-оптимизированные зависимости для Telegram Channel Finder Bot
+# Только основные пакеты без проблемных зависимостей
+
+# Telegram Bot Dependencies
+aiogram==3.13.1
+aiofiles==24.1.0
+python-dotenv==1.0.1
+aiosqlite==0.20.0
+prettytable==3.10.0
+
+# Payment System Dependencies
+yookassa==3.6.0
+
+# Web Admin Panel Dependencies
+fastapi==0.104.1
+uvicorn==0.24.0
+jinja2==3.1.2
+python-multipart==0.0.6
+
+# Authentication & Security (упрощенные версии)
+passlib==1.7.4
+
+# HTTP Client for webhooks
+httpx>=0.25.2
+
+# Validation & Serialization
+pydantic>=2.5.0
+
+# Background Tasks & Scheduling
+apscheduler>=3.10.4
+
+# Monitoring & Logging
+structlog>=23.2.0
+
+# Production Database Management
+schedule>=1.2.0
