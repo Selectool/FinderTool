@@ -28,8 +28,8 @@ class YooKassaPaymentService:
         self.provider_data = provider_data
         self.db = db or Database()
 
-        # Проверяем режим работы (TEST или LIVE)
-        self.is_test_mode = ":TEST:" in provider_token
+        # Проверяем режим работы (TEST или LIVE) с поддержкой современных форматов
+        self.is_test_mode = ":TEST:" in provider_token or provider_token.startswith("test_")
 
         # Валидация токена
         self._validate_token()
@@ -45,15 +45,19 @@ class YooKassaPaymentService:
             logger.info("🧪 Работа в тестовом режиме")
 
     def _validate_token(self):
-        """Валидация токена ЮKassa"""
+        """Валидация токена ЮKassa с поддержкой современных форматов"""
         if not self.provider_token:
             raise ValueError("Токен ЮKassa не может быть пустым")
 
-        if self.is_test_mode and ":TEST:" not in self.provider_token:
-            raise ValueError("Тестовый токен должен содержать ':TEST:'")
+        # Проверка тестового токена
+        if self.is_test_mode:
+            if not (":TEST:" in self.provider_token or self.provider_token.startswith("test_")):
+                raise ValueError("Тестовый токен должен содержать ':TEST:' или начинаться с 'test_'")
 
-        if not self.is_test_mode and ":LIVE:" not in self.provider_token:
-            raise ValueError("Продакшн токен должен содержать ':LIVE:'")
+        # Проверка продакшн токена
+        if not self.is_test_mode:
+            if not (":LIVE:" in self.provider_token or self.provider_token.startswith("live_")):
+                raise ValueError("Продакшн токен должен содержать ':LIVE:' или начинаться с 'live_'")
 
         logger.info("✅ Токен ЮKassa прошел валидацию")
 
