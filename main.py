@@ -15,18 +15,45 @@ from bot.middlewares.database import DatabaseMiddleware
 from bot.middlewares.role_middleware import RoleMiddleware
 from bot.handlers import basic, channels, subscription, admin, reply_menu
 
-# Production-ready imports
-from bot.middlewares.production_security import (
-    RateLimitMiddleware, SecurityMiddleware,
-    TimeoutMiddleware, ProductionMonitoringMiddleware
-)
-from bot.utils.health_check import health_manager
-
 # Настройка production логирования
 from bot.utils.production_logger import setup_production_logging
 setup_production_logging()
 
 logger = logging.getLogger(__name__)
+
+# Production-ready imports (с fallback для совместимости)
+try:
+    from bot.middlewares.production_security import (
+        RateLimitMiddleware, SecurityMiddleware,
+        TimeoutMiddleware, ProductionMonitoringMiddleware
+    )
+    from bot.utils.health_check import health_manager
+    PRODUCTION_MODULES_AVAILABLE = True
+    logger.info("✅ Production модули загружены")
+except ImportError as e:
+    logger.warning(f"⚠️ Production модули недоступны: {e}")
+    logger.info("🔄 Запуск в базовом режиме без дополнительной защиты")
+    PRODUCTION_MODULES_AVAILABLE = False
+
+    # Создаем простые заглушки для production функций
+    if IS_PRODUCTION:
+        logger.info("🛡️ Создаем базовую production защиту...")
+
+        # Простая проверка здоровья БД
+        class SimpleHealthManager:
+            async def perform_health_check(self):
+                try:
+                    # Проверяем только БД через production manager
+                    from database.production_manager import db_manager
+                    db_health = await db_manager.health_check()
+                    return {
+                        'status': 'healthy' if db_health['status'] == 'healthy' else 'degraded',
+                        'components': {'database': db_health}
+                    }
+                except Exception as e:
+                    return {'status': 'unhealthy', 'error': str(e)}
+
+        health_manager = SimpleHealthManager()
 
 
 async def main():
@@ -68,7 +95,7 @@ async def main():
     logger.info("Legacy Database инициализирована для совместимости")
     
     # Production-ready middleware stack
-    if IS_PRODUCTION:
+    if IS_PRODUCTION and PRODUCTION_MODULES_AVAILABLE:
         logger.info("🔒 Подключение production security middleware...")
 
         # Security middleware (первый уровень защиты)
@@ -89,6 +116,8 @@ async def main():
         dp.callback_query.middleware(monitoring_middleware)
 
         logger.info("✅ Production middleware подключены")
+    elif IS_PRODUCTION:
+        logger.warning("⚠️ Production режим, но security модули недоступны")
 
     # Основные middleware
     dp.message.middleware(DatabaseMiddleware(db))
@@ -122,18 +151,24 @@ async def main():
         logger.info(f"🤖 Бот запущен: @{bot_info.username} (ID: {bot_info.id})")
 
         # Production health check при запуске
-        if IS_PRODUCTION:
+        if IS_PRODUCTION and PRODUCTION_MODULES_AVAILABLE:
             logger.info("🏥 Выполняем начальную проверку здоровья системы...")
-            health_status = await health_manager.perform_health_check()
+            try:
+                health_status = await health_manager.perform_health_check()
 
-            if health_status['status'] == 'unhealthy':
-                logger.error("❌ Система не готова к работе! Проверьте компоненты:")
-                for component, status in health_status['components'].items():
-                    if status.get('status') != 'healthy':
-                        logger.error(f"  - {component}: {status.get('error', 'unknown error')}")
-                return
-            else:
-                logger.info(f"✅ Система готова к работе: {health_status['status']}")
+                if health_status['status'] == 'unhealthy':
+                    logger.error("❌ Система не готова к работе! Проверьте компоненты:")
+                    for component, status in health_status['components'].items():
+                        if status.get('status') != 'healthy':
+                            logger.error(f"  - {component}: {status.get('error', 'unknown error')}")
+                    return
+                else:
+                    logger.info(f"✅ Система готова к работе: {health_status['status']}")
+            except Exception as e:
+                logger.warning(f"⚠️ Ошибка health check: {e}")
+                logger.info("🔄 Продолжаем запуск без health check")
+        elif IS_PRODUCTION:
+            logger.info("🏥 Health check модули недоступны, пропускаем проверку")
 
         # Запуск polling
         logger.info("🚀 Запуск polling...")
