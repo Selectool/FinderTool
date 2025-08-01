@@ -105,17 +105,15 @@ async def callback_pay_subscription(callback: CallbackQuery, db: Database, state
                 parse_mode="HTML"
             )
 
-        # Создаем данные для инвойса
-        amount_in_kopecks = SUBSCRIPTION_PRICE * 100  # Конвертируем в копейки
-
+        # Создаем данные для инвойса (сумма рассчитается автоматически с комиссией)
         logger.info(f"Создание инвойса для пользователя {user_id}:")
-        logger.info(f"  - Цена подписки: {SUBSCRIPTION_PRICE} ₽")
-        logger.info(f"  - Сумма в копейках: {amount_in_kopecks}")
+        logger.info(f"  - Базовая цена подписки: {SUBSCRIPTION_PRICE} ₽")
+        logger.info(f"  - Сумма будет рассчитана с учетом комиссии")
 
         invoice_data = await payment_service.create_invoice_data(
             user_id=user_id,
-            amount=amount_in_kopecks,
-            description=f"Подписка Channel Finder Bot - {SUBSCRIPTION_PRICE}₽/месяц",
+            amount=None,  # Позволяем сервису рассчитать сумму с комиссией
+            description=f"Подписка FinderTool - {SUBSCRIPTION_PRICE}₽/месяц",
             subscription_months=1
         )
 

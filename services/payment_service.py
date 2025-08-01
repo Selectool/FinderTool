@@ -66,7 +66,7 @@ class YooKassaPaymentService:
         return str(uuid.uuid4())
 
     async def create_invoice_data(self, user_id: int, amount: Optional[int] = None,
-                                description: str = "Подписка Channel Finder Bot",
+                                description: str = "Подписка FinderTool",
                                 subscription_months: int = 1,
                                 payment_method: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -135,7 +135,7 @@ class YooKassaPaymentService:
             prices = [LabeledPrice(label=description, amount=amount)]
 
             invoice_data = {
-                "title": "Подписка Channel Finder Bot",
+                "title": "Подписка FinderTool",
                 "description": detailed_description,
                 "payload": payload,
                 "provider_token": self.provider_token,

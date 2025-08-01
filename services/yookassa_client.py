@@ -207,7 +207,7 @@ class YookassaClient:
             
             # Создаем описание
             description = (
-                f"Подписка Channel Finder Bot - 1 месяц. "
+                f"Подписка FinderTool - 1 месяц. "
                 f"Базовая цена: {base_price}₽, комиссия: {commission_amount}₽"
             )
             
