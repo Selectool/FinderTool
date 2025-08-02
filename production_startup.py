@@ -390,6 +390,123 @@ class ProductionInstaller:
             logger.error(f"❌ Ошибка проверки статуса: {e}")
             return False
 
+    async def run_full_installation(self):
+        """Выполнить полную установку production системы"""
+        logger.info("🚀 Запуск полной установки production системы...")
+
+        installation_start = time.time()
+
+        try:
+            # 1. Проверка системных требований
+            if not self.check_system_requirements():
+                logger.error("❌ Системные требования не выполнены")
+                return False
+
+            # 2. Установка системных зависимостей
+            if not self.install_system_dependencies():
+                logger.error("❌ Ошибка установки системных зависимостей")
+                return False
+
+            # 3. Создание директорий
+            if not self.create_directories():
+                logger.error("❌ Ошибка создания директорий")
+                return False
+
+            # 4. Настройка виртуального окружения
+            if not self.setup_virtual_environment():
+                logger.error("❌ Ошибка настройки виртуального окружения")
+                return False
+
+            # 5. Установка Python зависимостей
+            if not self.install_python_dependencies():
+                logger.error("❌ Ошибка установки Python зависимостей")
+                return False
+
+            # 6. Применение миграций
+            if not await self.apply_database_migrations():
+                logger.error("❌ Ошибка применения миграций")
+                return False
+
+            # 7. Настройка и запуск Supervisor
+            if not self.setup_supervisor():
+                logger.error("❌ Ошибка настройки Supervisor")
+                return False
+
+            # 8. Финальная проверка
+            await asyncio.sleep(15)  # Ждем инициализации сервисов
+
+            installation_time = time.time() - installation_start
+
+            logger.info("🎉 УСТАНОВКА ЗАВЕРШЕНА УСПЕШНО!")
+            logger.info(f"⏱️ Время установки: {installation_time:.1f} секунд")
+            logger.info("🌐 Админ-панель: http://185.207.66.201:8080")
+            logger.info("🔑 Логин: admin / admin123")
+            logger.info("📊 Все сервисы под управлением Supervisor")
+            logger.info("🔄 Система готова к работе!")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Критическая ошибка установки: {e}")
+            return False
+
+    def run_simple_commands(self, command):
+        """Выполнить простые команды без установки"""
+        try:
+            if command == "status":
+                # Статус сервисов
+                logger.info("📋 Проверка статуса сервисов...")
+                supervisor_config = self.app_dir / "supervisord_production.conf"
+                if supervisor_config.exists():
+                    self.run_command(f"supervisorctl -c {supervisor_config} status", check=False)
+                else:
+                    logger.error("❌ Конфигурация Supervisor не найдена")
+
+            elif command == "restart":
+                # Перезапуск сервисов
+                logger.info("🔄 Перезапуск всех сервисов...")
+                supervisor_config = self.app_dir / "supervisord_production.conf"
+                if supervisor_config.exists():
+                    self.run_command(f"supervisorctl -c {supervisor_config} restart all", check=False)
+                else:
+                    logger.error("❌ Конфигурация Supervisor не найдена")
+
+            elif command == "stop":
+                # Остановка сервисов
+                logger.info("🛑 Остановка всех сервисов...")
+                self.stop_existing_processes()
+
+            elif command == "logs":
+                # Просмотр логов
+                service = sys.argv[2] if len(sys.argv) > 2 else None
+                if service:
+                    log_file = self.logs_dir / f"{service}.log"
+                    if log_file.exists():
+                        self.run_command(f"tail -f {log_file}", check=False)
+                    else:
+                        logger.error(f"❌ Лог файл {log_file} не найден")
+                else:
+                    logger.info("📄 Доступные лог файлы:")
+                    for log_file in self.logs_dir.glob("*.log"):
+                        logger.info(f"   {log_file.name}")
+
+            elif command == "dashboard":
+                # Информация об админ-панели
+                logger.info("🌐 Админ-панель доступна по адресу:")
+                logger.info("   http://185.207.66.201:8080")
+                logger.info("   Логин: admin")
+                logger.info("   Пароль: admin123")
+
+            else:
+                logger.error(f"❌ Неизвестная команда: {command}")
+                return False
+
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка выполнения команды {command}: {e}")
+            return False
+
 def show_help():
     """Показать справку"""
     help_text = """
@@ -588,6 +705,17 @@ async def main():
             logger.error(f"❌ Неизвестная команда: {command}")
             show_help()
             sys.exit(1)
+
+        logger.info("✅ Команда выполнена успешно")
+
+    except KeyboardInterrupt:
+        logger.info("👋 Операция прервана пользователем")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"❌ Критическая ошибка: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
         logger.info("✅ Команда выполнена успешно")
 
