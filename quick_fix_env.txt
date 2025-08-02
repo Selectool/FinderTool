@@ -1,0 +1,10 @@
+# Обновите эти переменные в Dokploy Environment:
+
+ADMIN_ALLOWED_HOSTS=185.207.66.201,findertool.dokploy.com,localhost,127.0.0.1,0.0.0.0
+ADMIN_CORS_ORIGINS=http://185.207.66.201:8080,https://findertool.dokploy.com,http://localhost:8080,http://127.0.0.1:8080
+
+# Вместо:
+# ADMIN_ALLOWED_HOSTS=*
+# ADMIN_CORS_ORIGINS=*
+
+# Причина: Валидатор в production режиме не разрешает "*" для безопасности
