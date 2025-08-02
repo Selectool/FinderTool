@@ -29,6 +29,21 @@ except ImportError:
 
 from database.models import Database
 
+# Импорты для админ-панели
+try:
+    from admin.auth.broadcast_permissions import init_broadcast_permissions, add_get_user_permissions_method
+except ImportError:
+    try:
+        from .auth.broadcast_permissions import init_broadcast_permissions, add_get_user_permissions_method
+    except ImportError:
+        # Заглушка если модуль не найден
+        async def init_broadcast_permissions(db):
+            logger.warning("init_broadcast_permissions не найден, пропускаем")
+            pass
+        def add_get_user_permissions_method():
+            logger.warning("add_get_user_permissions_method не найден, пропускаем")
+            pass
+
 # Настройка логирования
 logging.basicConfig(level=getattr(logging, LOG_LEVEL))
 logger = structlog.get_logger()
@@ -204,12 +219,8 @@ app.include_router(payment_cleanup.router, tags=["payment-cleanup"])
 # Веб-страницы
 try:
     from .web import auth as web_auth, dashboard, users as web_users, broadcasts as web_broadcasts, payment_cleanup as web_payment_cleanup
-    # Инициализация системы прав доступа для рассылок
-    from .auth.broadcast_permissions import init_broadcast_permissions, add_get_user_permissions_method
 except ImportError:
     from admin.web import auth as web_auth, dashboard, users as web_users, broadcasts as web_broadcasts, payment_cleanup as web_payment_cleanup
-    # Инициализация системы прав доступа для рассылок
-    from admin.auth.broadcast_permissions import init_broadcast_permissions, add_get_user_permissions_method
 
 # Добавляем метод get_user_permissions в класс Database
 add_get_user_permissions_method()
