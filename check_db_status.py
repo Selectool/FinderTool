@@ -33,8 +33,19 @@ async def check_database():
         
         tables = await adapter.fetch_all(tables_query)
         print(f"\n📋 Найдено таблиц: {len(tables)}")
-        
-        table_names = [table[0] for table in tables]
+
+        # Обрабатываем результат в зависимости от типа
+        table_names = []
+        if tables:
+            for table in tables:
+                if isinstance(table, (list, tuple)):
+                    table_names.append(table[0])
+                elif isinstance(table, dict):
+                    table_names.append(table['table_name'])
+                else:
+                    table_names.append(str(table))
+
+        print(f"🔍 Обработано таблиц: {len(table_names)}")
         
         # Критически важные таблицы
         critical_tables = [
@@ -72,18 +83,28 @@ async def check_database():
                 ORDER BY ordinal_position;
             """
             columns = await adapter.fetch_all(columns_query)
-            
+
             print("📋 Структура таблицы admin_users:")
             for col in columns:
-                print(f"   • {col[0]} ({col[1]}) - nullable: {col[2]}")
+                if isinstance(col, (list, tuple)):
+                    print(f"   • {col[0]} ({col[1]}) - nullable: {col[2]}")
+                elif isinstance(col, dict):
+                    print(f"   • {col['column_name']} ({col['data_type']}) - nullable: {col['is_nullable']}")
+                else:
+                    print(f"   • {col}")
             
             # Проверяем пользователей
             users_query = "SELECT username, role, is_active, created_at FROM admin_users"
             users = await adapter.fetch_all(users_query)
-            
+
             print(f"\n👥 Пользователи в admin_users ({len(users)}):")
             for user in users:
-                print(f"   • {user[0]} ({user[1]}) - активен: {user[2]} - создан: {user[3]}")
+                if isinstance(user, (list, tuple)):
+                    print(f"   • {user[0]} ({user[1]}) - активен: {user[2]} - создан: {user[3]}")
+                elif isinstance(user, dict):
+                    print(f"   • {user['username']} ({user['role']}) - активен: {user['is_active']} - создан: {user['created_at']}")
+                else:
+                    print(f"   • {user}")
         
         await adapter.disconnect()
         print("\n✅ Проверка завершена")
