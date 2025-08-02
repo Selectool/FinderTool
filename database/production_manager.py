@@ -373,12 +373,16 @@ class ProductionDatabaseManager:
             adapter = DatabaseAdapter(self.database_url)
             await adapter.connect()
 
-            query = """
-                SELECT * FROM admin_users
-                WHERE username = %s AND is_active = TRUE
-            """
             if adapter.db_type == 'sqlite':
-                query = query.replace('%s', '?')
+                query = """
+                    SELECT * FROM admin_users
+                    WHERE username = ? AND is_active = TRUE
+                """
+            else:  # PostgreSQL
+                query = """
+                    SELECT * FROM admin_users
+                    WHERE username = $1 AND is_active = TRUE
+                """
 
             result = await adapter.fetch_one(query, (username,))
             await adapter.disconnect()
@@ -394,11 +398,14 @@ class ProductionDatabaseManager:
             adapter = DatabaseAdapter(self.database_url)
             await adapter.connect()
 
-            query = """
-                UPDATE admin_users SET last_login = %s WHERE id = %s
-            """
             if adapter.db_type == 'sqlite':
-                query = query.replace('%s', '?')
+                query = """
+                    UPDATE admin_users SET last_login = ? WHERE id = ?
+                """
+            else:  # PostgreSQL
+                query = """
+                    UPDATE admin_users SET last_login = $1 WHERE id = $2
+                """
 
             await adapter.execute(query, (datetime.now(), user_id))
             await adapter.disconnect()
