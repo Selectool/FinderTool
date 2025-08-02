@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def get_database():
+async def get_database_instance():
     """Dependency для получения экземпляра базы данных"""
     db = Database()
     await db.init_db()
@@ -21,7 +21,7 @@ async def get_database():
 
 
 @router.post("/yookassa/webhook")
-async def yookassa_webhook(request: Request, db: Database = Depends(get_database)):
+async def yookassa_webhook(request: Request, db: Database = Depends(get_database_instance)):
     """
     Endpoint для обработки webhook уведомлений от ЮKassa
     """

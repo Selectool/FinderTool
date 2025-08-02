@@ -10,7 +10,8 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import BOT_TOKEN, API_ID, API_HASH, IS_PRODUCTION
 from database.models import Database
-from database.production_manager import init_production_database
+from database.production_manager import init_production_database, db_manager
+from database.db_adapter import set_database
 from bot.middlewares.database import DatabaseMiddleware
 from bot.middlewares.role_middleware import RoleMiddleware
 from bot.handlers import basic, channels, subscription, admin, reply_menu
@@ -88,6 +89,10 @@ async def main():
         return
 
     logger.info(f"База данных инициализирована: {db_info.get('database_type', 'unknown')}")
+
+    # Устанавливаем глобальный адаптер базы данных для админ-панели
+    set_database(db_manager.adapter)
+    logger.info("Глобальный адаптер базы данных установлен")
 
     # Инициализация legacy Database для совместимости
     db = Database()

@@ -251,3 +251,18 @@ class DatabaseAdapter:
             )
             """
         ]
+
+
+# Глобальная переменная для хранения экземпляра адаптера
+_database_adapter: Optional[DatabaseAdapter] = None
+
+
+def get_database() -> Optional[DatabaseAdapter]:
+    """Получить глобальный экземпляр адаптера базы данных"""
+    return _database_adapter
+
+
+def set_database(adapter: DatabaseAdapter):
+    """Установить глобальный экземпляр адаптера базы данных"""
+    global _database_adapter
+    _database_adapter = adapter
