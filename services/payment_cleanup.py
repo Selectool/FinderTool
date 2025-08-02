@@ -103,38 +103,52 @@ class PaymentCleanupService:
 
             return cleanup_stats
 
-            finally:
-                await adapter.disconnect()
-
         except Exception as e:
             logger.error(f"❌ Ошибка при очистке просроченных инвойсов: {e}")
             return {'expired_found': 0, 'cancelled': 0, 'errors': 1}
+        finally:
+            await adapter.disconnect()
     
     async def cleanup_old_failed_payments(self, days_old: int = 7) -> int:
         """
         Удаление старых неуспешных платежей для оптимизации БД
         """
         try:
-            import aiosqlite
-            
+            from database.db_adapter import DatabaseAdapter
+            import os
+
             cutoff_date = datetime.now() - timedelta(days=days_old)
-            
-            async with aiosqlite.connect(self.db.db_path) as db:
+
+            # Используем адаптер базы данных
+            database_url = os.getenv('DATABASE_URL', 'sqlite:///bot.db')
+            adapter = DatabaseAdapter(database_url)
+            await adapter.connect()
+
+            try:
                 # Удаляем старые неуспешные платежи
-                cursor = await db.execute("""
-                    DELETE FROM payments
-                    WHERE status IN ('expired', 'cancelled', 'failed')
-                    AND created_at < ?
-                """, (cutoff_date,))
-                
-                deleted_count = cursor.rowcount
-                await db.commit()
-                
+                if adapter.db_type == 'sqlite':
+                    result = await adapter.execute("""
+                        DELETE FROM payments
+                        WHERE status IN ('expired', 'cancelled', 'failed')
+                        AND created_at < ?
+                    """, (cutoff_date,))
+                else:  # PostgreSQL
+                    result = await adapter.execute("""
+                        DELETE FROM payments
+                        WHERE status IN ('expired', 'cancelled', 'failed')
+                        AND created_at < $1
+                    """, (cutoff_date,))
+
+                deleted_count = result if result else 0
+
                 if deleted_count > 0:
                     logger.info(f"🗑️ Удалено {deleted_count} старых неуспешных платежей (старше {days_old} дней)")
-                
+
                 return deleted_count
-                
+
+            finally:
+                await adapter.disconnect()
+
         except Exception as e:
             logger.error(f"❌ Ошибка при удалении старых платежей: {e}")
             return 0
@@ -157,43 +171,41 @@ class PaymentCleanupService:
             adapter = DatabaseAdapter(database_url)
             await adapter.connect()
 
-            try:
-                # Количество ожидающих платежей
-                row = await adapter.fetch_one("""
-                    SELECT COUNT(*) FROM payments WHERE status = 'pending'
-                """)
-                stats['pending_invoices'] = row[0] if row else 0
+            # Количество ожидающих платежей
+            row = await adapter.fetch_one("""
+                SELECT COUNT(*) FROM payments WHERE status = 'pending'
+            """)
+            stats['pending_invoices'] = row[0] if row else 0
 
-                # Количество просроченных платежей
-                row = await adapter.fetch_one("""
-                    SELECT COUNT(*) FROM payments WHERE status = 'expired'
-                """)
-                stats['expired_invoices'] = row[0] if row else 0
+            # Количество просроченных платежей
+            row = await adapter.fetch_one("""
+                SELECT COUNT(*) FROM payments WHERE status = 'expired'
+            """)
+            stats['expired_invoices'] = row[0] if row else 0
 
-                # Самый старый ожидающий платеж
-                row = await adapter.fetch_one("""
-                    SELECT MIN(created_at) FROM payments WHERE status = 'pending'
-                """)
-                if row and row[0]:
-                    stats['oldest_pending'] = row[0]
+            # Самый старый ожидающий платеж
+            row = await adapter.fetch_one("""
+                SELECT MIN(created_at) FROM payments WHERE status = 'pending'
+            """)
+            if row and row[0]:
+                stats['oldest_pending'] = row[0]
 
-                    # Проверяем, нужна ли очистка
-                    if isinstance(row[0], str):
-                        oldest_time = datetime.fromisoformat(row[0])
-                    else:
-                        oldest_time = row[0]
+                # Проверяем, нужна ли очистка
+                if isinstance(row[0], str):
+                    oldest_time = datetime.fromisoformat(row[0])
+                else:
+                    oldest_time = row[0]
 
-                    if datetime.now() - oldest_time > timedelta(seconds=self.invoice_timeout):
-                        stats['cleanup_needed'] = True
+                if datetime.now() - oldest_time > timedelta(seconds=self.invoice_timeout):
+                    stats['cleanup_needed'] = True
 
             return stats
-
-            finally:
-                await adapter.disconnect()
 
         except Exception as e:
             logger.error(f"❌ Ошибка при получении статистики очистки: {e}")
             return {}
+        finally:
+            await adapter.disconnect()
     
     async def start_cleanup_scheduler(self):
         """Запуск планировщика очистки"""
