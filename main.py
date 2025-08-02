@@ -61,30 +61,32 @@ except ImportError as e:
 async def main():
     """Главная функция запуска бота"""
 
-    # Production-ready система миграций
+    # Production-ready инициализация базы данных
     try:
-        logger.info("🚀 Запуск production-ready системы миграций...")
+        logger.info("🚀 Запуск production-ready инициализации базы данных...")
 
         # Получаем URL базы данных
         database_url = os.getenv('DATABASE_URL', 'sqlite:///bot.db')
 
-        # Исправляем конфликты миграций
-        from database.unified_migration_manager import fix_migration_conflicts
-        migration_success = await fix_migration_conflicts(database_url)
+        # Используем новый production-ready менеджер
+        from database.production_database_manager import initialize_production_database
+        db_info = await initialize_production_database(database_url)
 
-        if migration_success:
-            logger.info("✅ Unified система миграций успешно применена")
-        else:
-            logger.warning("⚠️ Проблемы с миграциями, но продолжаем работу")
-
-        # Запускаем стандартные миграции
-        from database.migration_manager import auto_migrate
-        await auto_migrate(database_url)
-        logger.info("✅ Стандартные миграции применены")
+        logger.info("✅ Production база данных инициализирована")
+        logger.info(f"📊 Тип БД: {db_info.get('database_type')}")
+        logger.info(f"📋 Таблиц: {len(db_info.get('tables', []))}")
 
     except Exception as e:
-        logger.warning(f"⚠️ Ошибка миграций: {e}")
-        logger.info("🔄 Продолжаем работу без миграций...")
+        logger.warning(f"⚠️ Ошибка инициализации БД: {e}")
+        logger.info("🔄 Продолжаем работу с базовой инициализацией...")
+
+        # Fallback к стандартным миграциям
+        try:
+            from database.migration_manager import auto_migrate
+            await auto_migrate(database_url)
+            logger.info("✅ Fallback миграции применены")
+        except Exception as fallback_error:
+            logger.error(f"❌ Критическая ошибка миграций: {fallback_error}")
 
     # Проверяем наличие необходимых конфигураций
     if not BOT_TOKEN:
