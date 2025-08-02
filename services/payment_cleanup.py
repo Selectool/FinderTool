@@ -43,63 +43,62 @@ class PaymentCleanupService:
             adapter = DatabaseAdapter(database_url)
             await adapter.connect()
 
-            try:
-                # Находим просроченные неоплаченные инвойсы
-                if adapter.db_type == 'sqlite':
-                    expired_payments = await adapter.fetch_all("""
-                        SELECT payment_id, user_id, amount, created_at
-                        FROM payments
-                        WHERE status = 'pending'
-                        AND created_at < ?
-                    """, (expiry_time,))
-                else:  # PostgreSQL
-                    expired_payments = await adapter.fetch_all("""
-                        SELECT payment_id, user_id, amount, created_at
-                        FROM payments
-                        WHERE status = 'pending'
-                        AND created_at < $1
-                    """, (expiry_time,))
+            # Находим просроченные неоплаченные инвойсы
+            if adapter.db_type == 'sqlite':
+                expired_payments = await adapter.fetch_all("""
+                    SELECT payment_id, user_id, amount, created_at
+                    FROM payments
+                    WHERE status = 'pending'
+                    AND created_at < ?
+                """, (expiry_time,))
+            else:  # PostgreSQL
+                expired_payments = await adapter.fetch_all("""
+                    SELECT payment_id, user_id, amount, created_at
+                    FROM payments
+                    WHERE status = 'pending'
+                    AND created_at < $1
+                """, (expiry_time,))
 
-                cleanup_stats['expired_found'] = len(expired_payments) if expired_payments else 0
+            cleanup_stats['expired_found'] = len(expired_payments) if expired_payments else 0
 
-                if expired_payments:
-                    logger.info(f"🧹 Найдено {len(expired_payments)} просроченных инвойсов для очистки")
+            if expired_payments:
+                logger.info(f"🧹 Найдено {len(expired_payments)} просроченных инвойсов для очистки")
 
-                    # Отменяем просроченные платежи
-                    for payment in expired_payments:
-                        try:
-                            payment_id, user_id, amount, created_at = payment
+                # Отменяем просроченные платежи
+                for payment in expired_payments:
+                    try:
+                        payment_id, user_id, amount, created_at = payment
 
-                            # Обновляем статус на cancelled
-                            if adapter.db_type == 'sqlite':
-                                await adapter.execute("""
-                                    UPDATE payments
-                                    SET status = 'expired',
-                                        updated_at = CURRENT_TIMESTAMP,
-                                        cancellation_reason = 'Invoice expired after 30 minutes'
-                                    WHERE payment_id = ?
-                                """, (payment_id,))
-                            else:  # PostgreSQL
-                                await adapter.execute("""
-                                    UPDATE payments
-                                    SET status = 'expired',
-                                        updated_at = NOW(),
-                                        cancellation_reason = 'Invoice expired after 30 minutes'
-                                    WHERE payment_id = $1
-                                """, (payment_id,))
+                        # Обновляем статус на cancelled
+                        if adapter.db_type == 'sqlite':
+                            await adapter.execute("""
+                                UPDATE payments
+                                SET status = 'expired',
+                                    updated_at = CURRENT_TIMESTAMP,
+                                    cancellation_reason = 'Invoice expired after 30 minutes'
+                                WHERE payment_id = ?
+                            """, (payment_id,))
+                        else:  # PostgreSQL
+                            await adapter.execute("""
+                                UPDATE payments
+                                SET status = 'expired',
+                                    updated_at = NOW(),
+                                    cancellation_reason = 'Invoice expired after 30 minutes'
+                                WHERE payment_id = $1
+                            """, (payment_id,))
 
-                            cleanup_stats['cancelled'] += 1
+                        cleanup_stats['cancelled'] += 1
 
-                            logger.info(f"❌ Отменен просроченный платеж {payment_id} пользователя {user_id} на сумму {amount/100:.2f}₽")
+                        logger.info(f"❌ Отменен просроченный платеж {payment_id} пользователя {user_id} на сумму {amount/100:.2f}₽")
 
-                        except Exception as e:
-                            logger.error(f"Ошибка при отмене платежа {payment_id}: {e}")
-                            cleanup_stats['errors'] += 1
-                    
-                    if cleanup_stats['cancelled'] > 0:
-                        logger.info(f"✅ Очистка завершена: отменено {cleanup_stats['cancelled']} просроченных инвойсов")
-                else:
-                    logger.debug("✨ Просроченных инвойсов не найдено")
+                    except Exception as e:
+                        logger.error(f"Ошибка при отмене платежа {payment_id}: {e}")
+                        cleanup_stats['errors'] += 1
+
+                if cleanup_stats['cancelled'] > 0:
+                    logger.info(f"✅ Очистка завершена: отменено {cleanup_stats['cancelled']} просроченных инвойсов")
+            else:
+                logger.debug("✨ Просроченных инвойсов не найдено")
 
         except Exception as e:
             logger.error(f"❌ Ошибка при очистке просроченных инвойсов: {e}")
