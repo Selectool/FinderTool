@@ -80,7 +80,7 @@ log_*
 
 # ============ TESTING & DEVELOPMENT ============
 # Тестовые файлы
-test_*.py
+# test_*.py  # РАЗРЕШАЕМ test_launch.py для деплоя
 *_test.py
 tests/
 testing/
