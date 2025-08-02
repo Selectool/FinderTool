@@ -330,11 +330,6 @@ class ProductionDatabaseManager:
         finally:
             await adapter.disconnect()
 
-
-# Глобальный экземпляр
-production_db_manager = ProductionDatabaseManager()
-
-
     async def _create_admin_users_table(self, adapter: DatabaseAdapter):
         """Создает таблицу admin_users"""
         if self.db_type == 'postgresql':
