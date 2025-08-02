@@ -187,9 +187,9 @@ async def audit_logs_page(request: Request):
 
 # Подключение роутеров
 try:
-    from .api import auth, users, broadcasts, statistics, templates as template_routes, roles, audit, yookassa_webhook
+    from .api import auth, users, broadcasts, statistics, templates as template_routes, roles, audit, yookassa_webhook, payment_cleanup
 except ImportError:
-    from admin.api import auth, users, broadcasts, statistics, templates as template_routes, roles, audit, yookassa_webhook
+    from admin.api import auth, users, broadcasts, statistics, templates as template_routes, roles, audit, yookassa_webhook, payment_cleanup
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
@@ -199,14 +199,15 @@ app.include_router(template_routes.router, prefix="/api/templates", tags=["templ
 app.include_router(roles.router, prefix="/api/roles", tags=["roles"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
 app.include_router(yookassa_webhook.router, prefix="/api", tags=["yookassa-webhook"])
+app.include_router(payment_cleanup.router, tags=["payment-cleanup"])
 
 # Веб-страницы
 try:
-    from .web import auth as web_auth, dashboard, users as web_users, broadcasts as web_broadcasts
+    from .web import auth as web_auth, dashboard, users as web_users, broadcasts as web_broadcasts, payment_cleanup as web_payment_cleanup
     # Инициализация системы прав доступа для рассылок
     from .auth.broadcast_permissions import init_broadcast_permissions, add_get_user_permissions_method
 except ImportError:
-    from admin.web import auth as web_auth, dashboard, users as web_users, broadcasts as web_broadcasts
+    from admin.web import auth as web_auth, dashboard, users as web_users, broadcasts as web_broadcasts, payment_cleanup as web_payment_cleanup
     # Инициализация системы прав доступа для рассылок
     from admin.auth.broadcast_permissions import init_broadcast_permissions, add_get_user_permissions_method
 
@@ -217,6 +218,7 @@ app.include_router(web_auth.router, prefix="/auth", tags=["web-auth"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["web-dashboard"])
 app.include_router(web_users.router, prefix="/users", tags=["web-users"])
 app.include_router(web_broadcasts.router, prefix="/broadcasts", tags=["web-broadcasts"])
+app.include_router(web_payment_cleanup.router, prefix="/admin", tags=["web-payment-cleanup"])
 
 
 # Информация о приложении

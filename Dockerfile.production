@@ -1,0 +1,46 @@
+# Production Dockerfile для Telegram Channel Finder Bot
+FROM python:3.11-slim
+
+# Устанавливаем системные зависимости
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    gcc \
+    g++ \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Создаем пользователя для безопасности
+RUN useradd --create-home --shell /bin/bash app
+
+# Устанавливаем рабочую директорию
+WORKDIR /app
+
+# Копируем requirements и устанавливаем зависимости
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Копируем код приложения
+COPY . .
+
+# Создаем необходимые директории
+RUN mkdir -p /app/data /app/logs /app/database/backups && \
+    chown -R app:app /app
+
+# Переключаемся на пользователя app
+USER app
+
+# Устанавливаем переменные окружения
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV ENVIRONMENT=production
+
+# Открываем порт для админ-панели
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8080/health', timeout=5)" || exit 1
+
+# Запускаем приложение
+CMD ["python", "main.py"]

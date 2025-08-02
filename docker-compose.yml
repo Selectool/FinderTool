@@ -1,0 +1,185 @@
+version: '3.8'
+
+services:
+  # Telegram Bot + Admin Panel (Единый процесс)
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telegram-channel-finder-bot
+    restart: unless-stopped
+    ports:
+      - '${ADMIN_PORT:-8000}:8000'
+    environment:
+      # Основные настройки
+      - ENVIRONMENT=production
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_HOST=0.0.0.0
+      - ADMIN_PORT=8000
+
+      # PostgreSQL база данных (ПЕРСИСТЕНТНАЯ)
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/telegram_bot
+
+      # ЮKassa настройки
+      - YOOKASSA_SHOP_ID=${YOOKASSA_SHOP_ID}
+      - YOOKASSA_SECRET_KEY=${YOOKASSA_SECRET_KEY}
+      - YOOKASSA_MODE=${YOOKASSA_MODE:-live}
+
+      # Безопасность
+      - SECRET_KEY=${SECRET_KEY}
+
+      # Админы
+      - ADMIN_USER_IDS=${ADMIN_USER_IDS}
+
+      # Настройки подписки
+      - SUBSCRIPTION_PRICE=${SUBSCRIPTION_PRICE:-349}
+      - FREE_REQUESTS_LIMIT=${FREE_REQUESTS_LIMIT:-3}
+
+      # Логирование
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+    volumes:
+      # ВАЖНО: Персистентные volumes для данных
+      - app_logs:/app/logs
+      - app_backups:/app/database/backups
+      - app_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - bot-network
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8000/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # PostgreSQL Database с ПЕРСИСТЕНТНЫМ ХРАНИЛИЩЕМ
+  postgres:
+    image: postgres:15-alpine
+    container_name: telegram-bot-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=telegram_bot
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      # КРИТИЧЕСКИ ВАЖНО: Персистентный volume для данных PostgreSQL
+      - postgres_data:/var/lib/postgresql/data
+      - postgres_backups:/backups
+      # Инициализационные скрипты
+      - ./database/init:/docker-entrypoint-initdb.d
+    networks:
+      - bot-network
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d telegram_bot']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    # Настройки PostgreSQL для production
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
+      -c max_connections=100
+      -c shared_buffers=128MB
+      -c effective_cache_size=256MB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+
+  # Redis для кэширования (опционально)
+  redis:
+    image: redis:7-alpine
+    container_name: telegram-bot-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - bot-network
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+
+# КРИТИЧЕСКИ ВАЖНО: Именованные volumes для персистентности данных
+volumes:
+  # PostgreSQL данные - НЕ БУДУТ ПОТЕРЯНЫ при пересборке контейнера
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/postgres
+
+  # Бэкапы PostgreSQL
+  postgres_backups:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/backups
+
+  # Логи приложения
+  app_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/logs
+
+  # Бэкапы приложения
+  app_backups:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/app_backups
+
+  # Загруженные файлы
+  app_uploads:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/uploads
+
+  # Redis данные
+  redis_data:
+    driver: local
+
+networks:
+  bot-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

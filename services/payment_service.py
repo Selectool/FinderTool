@@ -350,58 +350,98 @@ class YooKassaPaymentService:
             return False
 
     async def get_payment_statistics(self) -> dict:
-        """Получить статистику платежей"""
+        """
+        Получить корректную статистику платежей
+        ИСПРАВЛЕНО: Считаем только успешные платежи, а не созданные инвойсы
+        """
         try:
             from datetime import datetime, timedelta
             import aiosqlite
 
             stats = {
-                'today': {'count': 0, 'amount': 0, 'successful': 0},
-                'week': {'count': 0, 'amount': 0, 'successful': 0},
-                'month': {'count': 0, 'amount': 0, 'successful': 0},
-                'total': {'count': 0, 'amount': 0, 'successful': 0}
+                'today': {'count': 0, 'amount': 0, 'successful': 0, 'pending': 0, 'failed': 0},
+                'week': {'count': 0, 'amount': 0, 'successful': 0, 'pending': 0, 'failed': 0},
+                'month': {'count': 0, 'amount': 0, 'successful': 0, 'pending': 0, 'failed': 0},
+                'total': {'count': 0, 'amount': 0, 'successful': 0, 'pending': 0, 'failed': 0}
             }
 
             async with aiosqlite.connect(self.db.db_path) as db:
-                # Статистика за сегодня
+                # Статистика за сегодня - ТОЛЬКО успешные платежи
                 today = datetime.now().date()
                 cursor = await db.execute("""
-                    SELECT COUNT(*), SUM(amount),
-                           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)
+                    SELECT
+                        COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful_count,
+                        SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as successful_amount,
+                        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
+                        COUNT(CASE WHEN status IN ('cancelled', 'failed') THEN 1 END) as failed_count
                     FROM payments
                     WHERE DATE(created_at) = ?
                 """, (today,))
                 row = await cursor.fetchone()
-                if row and row[0]:
-                    stats['today'] = {'count': row[0], 'amount': row[1] or 0, 'successful': row[2]}
+                if row:
+                    stats['today'] = {
+                        'count': row[0] or 0,  # Только успешные платежи
+                        'amount': row[1] or 0,  # Только сумма успешных платежей
+                        'successful': row[0] or 0,
+                        'pending': row[2] or 0,
+                        'failed': row[3] or 0
+                    }
 
-                # Статистика за неделю
+                # Статистика за неделю - ТОЛЬКО успешные платежи
                 week_ago = datetime.now() - timedelta(days=7)
                 cursor = await db.execute("""
-                    SELECT COUNT(*), SUM(amount),
-                           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)
+                    SELECT
+                        COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful_count,
+                        SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as successful_amount,
+                        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
+                        COUNT(CASE WHEN status IN ('cancelled', 'failed') THEN 1 END) as failed_count
                     FROM payments
                     WHERE created_at >= ?
                 """, (week_ago,))
                 row = await cursor.fetchone()
-                if row and row[0]:
-                    stats['week'] = {'count': row[0], 'amount': row[1] or 0, 'successful': row[2]}
+                if row:
+                    stats['week'] = {
+                        'count': row[0] or 0,  # Только успешные платежи
+                        'amount': row[1] or 0,  # Только сумма успешных платежей
+                        'successful': row[0] or 0,
+                        'pending': row[2] or 0,
+                        'failed': row[3] or 0
+                    }
 
-                # Общая статистика
+                # Общая статистика - ТОЛЬКО успешные платежи
                 cursor = await db.execute("""
-                    SELECT COUNT(*), SUM(amount),
-                           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)
+                    SELECT
+                        COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful_count,
+                        SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as successful_amount,
+                        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
+                        COUNT(CASE WHEN status IN ('cancelled', 'failed') THEN 1 END) as failed_count
                     FROM payments
                 """)
                 row = await cursor.fetchone()
-                if row and row[0]:
-                    stats['total'] = {'count': row[0], 'amount': row[1] or 0, 'successful': row[2]}
+                if row:
+                    stats['total'] = {
+                        'count': row[0] or 0,  # Только успешные платежи
+                        'amount': row[1] or 0,  # Только сумма успешных платежей
+                        'successful': row[0] or 0,
+                        'pending': row[2] or 0,
+                        'failed': row[3] or 0
+                    }
+
+            logger.info(f"📊 Статистика платежей получена:")
+            logger.info(f"  - Сегодня: {stats['today']['successful']} успешных из {stats['today']['successful'] + stats['today']['pending'] + stats['today']['failed']} всего")
+            logger.info(f"  - За неделю: {stats['week']['successful']} успешных из {stats['week']['successful'] + stats['week']['pending'] + stats['week']['failed']} всего")
+            logger.info(f"  - Всего: {stats['total']['successful']} успешных из {stats['total']['successful'] + stats['total']['pending'] + stats['total']['failed']} всего")
 
             return stats
 
         except Exception as e:
             logger.error(f"Ошибка при получении статистики платежей: {e}")
-            return {}
+            return {
+                'today': {'count': 0, 'amount': 0, 'successful': 0, 'pending': 0, 'failed': 0},
+                'week': {'count': 0, 'amount': 0, 'successful': 0, 'pending': 0, 'failed': 0},
+                'month': {'count': 0, 'amount': 0, 'successful': 0, 'pending': 0, 'failed': 0},
+                'total': {'count': 0, 'amount': 0, 'successful': 0, 'pending': 0, 'failed': 0}
+            }
 
 
 def create_payment_service(provider_token: str, currency: str = "RUB", 
