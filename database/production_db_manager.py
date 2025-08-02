@@ -15,36 +15,68 @@ logger = logging.getLogger(__name__)
 class ProductionDatabaseManager:
     """Production-ready менеджер базы данных с безопасными миграциями"""
     
-    def __init__(self):
-        self.database_url = os.getenv('DATABASE_URL')
+    def __init__(self, database_url: Optional[str] = None):
+        self.database_url = database_url or os.getenv('DATABASE_URL')
         if not self.database_url:
             raise ValueError("DATABASE_URL environment variable is required")
-        
+
         self.connection_pool: Optional[asyncpg.Pool] = None
-    
+        self._connection_params = self._parse_database_url()
+
+    def _parse_database_url(self) -> Dict[str, Any]:
+        """Парсинг DATABASE_URL для подключения"""
+        if not self.database_url:
+            raise ValueError("DATABASE_URL не установлен")
+
+        # Парсим URL вида: postgresql://user:password@host:port/database
+        try:
+            import urllib.parse
+            parsed = urllib.parse.urlparse(self.database_url)
+
+            return {
+                'host': parsed.hostname,
+                'port': parsed.port or 5432,
+                'user': parsed.username,
+                'password': parsed.password,
+                'database': parsed.path[1:] if parsed.path else None,
+                'ssl': 'require' if 'ssl=require' in self.database_url else 'prefer'
+            }
+        except Exception as e:
+            logger.error(f"❌ Ошибка парсинга DATABASE_URL: {e}")
+            raise
+
     async def verify_connection(self) -> bool:
         """Проверка подключения к PostgreSQL"""
         try:
             logger.info("🔍 Проверка подключения к PostgreSQL...")
-            
-            # Создаем пул соединений
+
+            # Создаем тестовое подключение
+            conn = await asyncpg.connect(**self._connection_params)
+
+            # Проверяем версию PostgreSQL
+            version = await conn.fetchval('SELECT version()')
+            logger.info(f"📊 PostgreSQL версия: {version}")
+
+            # Проверяем доступность базы данных
+            db_name = await conn.fetchval('SELECT current_database()')
+            logger.info(f"🗄️ Подключены к базе данных: {db_name}")
+
+            await conn.close()
+
+            # Создаем пул соединений для дальнейшего использования
             self.connection_pool = await asyncpg.create_pool(
-                self.database_url,
+                **self._connection_params,
                 min_size=1,
                 max_size=10,
                 command_timeout=60
             )
-            
-            # Тестируем подключение
-            async with self.connection_pool.acquire() as conn:
-                await conn.fetchval('SELECT 1')
-            
+
             logger.info("✅ Подключение к PostgreSQL успешно")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка подключения к PostgreSQL: {e}")
-            raise
+            return False
     
     async def run_safe_migrations(self) -> bool:
         """
