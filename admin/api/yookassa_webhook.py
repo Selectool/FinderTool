@@ -92,7 +92,7 @@ async def test_webhook_endpoint():
 
 
 @router.post("/yookassa/webhook/test")
-async def test_webhook_processing(request: Request, db: Database = Depends(get_database)):
+async def test_webhook_processing(request: Request, db: Database = Depends(get_database_instance)):
     """
     Тестовый endpoint для проверки обработки webhook уведомлений
     """
