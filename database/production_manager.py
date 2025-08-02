@@ -460,17 +460,17 @@ class ProductionDatabaseManager:
             params = []
 
             if search:
+                search_param = f"%{search}%"
                 if adapter.db_type == 'sqlite':
                     where_conditions.append("""
                         (username LIKE ? OR first_name LIKE ? OR last_name LIKE ? OR CAST(user_id AS TEXT) LIKE ?)
                     """)
-                    search_param = f"%{search}%"
                     params.extend([search_param, search_param, search_param, search_param])
                 else:  # PostgreSQL
-                    where_conditions.append("""
-                        (username ILIKE $%d OR first_name ILIKE $%d OR last_name ILIKE $%d OR CAST(user_id AS TEXT) ILIKE $%d)
-                    """ % (len(params)+1, len(params)+2, len(params)+3, len(params)+4))
-                    search_param = f"%{search}%"
+                    param_start = len(params) + 1
+                    where_conditions.append(f"""
+                        (username ILIKE ${param_start} OR first_name ILIKE ${param_start+1} OR last_name ILIKE ${param_start+2} OR CAST(user_id AS TEXT) ILIKE ${param_start+3})
+                    """)
                     params.extend([search_param, search_param, search_param, search_param])
 
             if filter_type:
@@ -502,11 +502,13 @@ class ProductionDatabaseManager:
                 """
                 params.extend([per_page, offset])
             else:  # PostgreSQL
+                param_limit = len(params) + 1
+                param_offset = len(params) + 2
                 users_query = f"""
                     SELECT * FROM users
                     WHERE {where_clause}
                     ORDER BY created_at DESC
-                    LIMIT ${len(params)+1} OFFSET ${len(params)+2}
+                    LIMIT ${param_limit} OFFSET ${param_offset}
                 """
                 params.extend([per_page, offset])
 
