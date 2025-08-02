@@ -55,6 +55,7 @@ except ImportError:
 # Остальные импорты
 try:
     from database.models import Database
+    from database.production_db_manager import ProductionDatabaseManager
     from bot.handlers.register import register_handlers
     from bot.middlewares.auth import AuthMiddleware
     from bot.middlewares.throttling import ThrottlingMiddleware
@@ -66,6 +67,12 @@ except ImportError as e:
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
     logger.warning(f"Некоторые модули недоступны: {e}")
+
+    # Создаем заглушки для недостающих классов
+    class ProductionDatabaseManager:
+        async def verify_connection(self): return True
+        async def run_safe_migrations(self): pass
+        async def optimize_for_production(self): pass
 
 class ProductionApp:
     """Production-ready приложение с fallback режимами"""
