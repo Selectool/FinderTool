@@ -363,6 +363,37 @@ class ProductionDatabaseManager:
 
         return info
 
+    # ========== АДМИН МЕТОДЫ ==========
+
+    async def get_admin_user_by_username(self, username: str) -> Optional[dict]:
+        """Получить админ пользователя по username"""
+        try:
+            query = """
+                SELECT * FROM admin_users
+                WHERE username = %s AND is_active = TRUE
+            """
+            if self.adapter.db_type == 'sqlite':
+                query = query.replace('%s', '?')
+
+            result = await self.adapter.fetch_one(query, (username,))
+            return result
+        except Exception as e:
+            logger.error(f"Ошибка получения админ пользователя {username}: {e}")
+            return None
+
+    async def update_admin_user_login(self, user_id: int):
+        """Обновить время последнего входа админ пользователя"""
+        try:
+            query = """
+                UPDATE admin_users SET last_login = %s WHERE id = %s
+            """
+            if self.adapter.db_type == 'sqlite':
+                query = query.replace('%s', '?')
+
+            await self.adapter.execute(query, (datetime.now(), user_id))
+        except Exception as e:
+            logger.error(f"Ошибка обновления времени входа для пользователя {user_id}: {e}")
+
 
 # Глобальный экземпляр менеджера
 db_manager = ProductionDatabaseManager()
