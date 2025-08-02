@@ -338,7 +338,7 @@ if FASTAPI_AVAILABLE and app is not None:
         app.include_router(dashboard.router, prefix="/dashboard", tags=["web-dashboard"])
         app.include_router(web_users.router, prefix="/users", tags=["web-users"])
         app.include_router(web_broadcasts.router, prefix="/broadcasts", tags=["web-broadcasts"])
-        app.include_router(web_payment_cleanup.router, prefix="/admin", tags=["web-payment-cleanup"])
+        app.include_router(web_payment_cleanup.router, prefix="/payment-cleanup", tags=["web-payment-cleanup"])
 
         logger.info("✅ Роутеры админ-панели подключены")
 

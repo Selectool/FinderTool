@@ -446,6 +446,175 @@ class ProductionDatabaseManager:
             logger.error(f"Ошибка логирования действия админа: {e}")
             # Не прерываем выполнение из-за ошибки логирования
 
+    async def get_users_paginated(self, page: int = 1, per_page: int = 50,
+                                 search: str = None, filter_type: str = None) -> Dict[str, Any]:
+        """Получить пользователей с пагинацией и фильтрацией"""
+        try:
+            adapter = DatabaseAdapter(self.database_url)
+            await adapter.connect()
+
+            offset = (page - 1) * per_page
+
+            # Базовый запрос
+            where_conditions = []
+            params = []
+
+            if search:
+                if adapter.db_type == 'sqlite':
+                    where_conditions.append("""
+                        (username LIKE ? OR first_name LIKE ? OR last_name LIKE ? OR CAST(user_id AS TEXT) LIKE ?)
+                    """)
+                    search_param = f"%{search}%"
+                    params.extend([search_param, search_param, search_param, search_param])
+                else:  # PostgreSQL
+                    where_conditions.append("""
+                        (username ILIKE $%d OR first_name ILIKE $%d OR last_name ILIKE $%d OR CAST(user_id AS TEXT) ILIKE $%d)
+                    """ % (len(params)+1, len(params)+2, len(params)+3, len(params)+4))
+                    search_param = f"%{search}%"
+                    params.extend([search_param, search_param, search_param, search_param])
+
+            if filter_type:
+                if filter_type == "subscribed":
+                    where_conditions.append("is_subscribed = TRUE")
+                elif filter_type == "unlimited":
+                    where_conditions.append("unlimited_access = TRUE")
+                elif filter_type == "blocked":
+                    where_conditions.append("blocked = TRUE")
+                elif filter_type == "bot_blocked":
+                    where_conditions.append("bot_blocked = TRUE")
+                elif filter_type == "active":
+                    where_conditions.append("last_activity > datetime('now', '-30 days')")
+
+            where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
+
+            # Общее количество
+            count_query = f"SELECT COUNT(*) FROM users WHERE {where_clause}"
+            total = await adapter.fetch_one(count_query, params)
+            total = total[0] if total else 0
+
+            # Пользователи
+            if adapter.db_type == 'sqlite':
+                users_query = f"""
+                    SELECT * FROM users
+                    WHERE {where_clause}
+                    ORDER BY created_at DESC
+                    LIMIT ? OFFSET ?
+                """
+                params.extend([per_page, offset])
+            else:  # PostgreSQL
+                users_query = f"""
+                    SELECT * FROM users
+                    WHERE {where_clause}
+                    ORDER BY created_at DESC
+                    LIMIT ${len(params)+1} OFFSET ${len(params)+2}
+                """
+                params.extend([per_page, offset])
+
+            users = await adapter.fetch_all(users_query, params)
+
+            await adapter.disconnect()
+
+            return {
+                "users": [dict(user) for user in users] if users else [],
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+                "pagination": {
+                    "current_page": page,
+                    "total_pages": (total + per_page - 1) // per_page,
+                    "has_prev": page > 1,
+                    "has_next": page * per_page < total,
+                    "prev_page": page - 1 if page > 1 else None,
+                    "next_page": page + 1 if page * per_page < total else None
+                }
+            }
+        except Exception as e:
+            logger.error(f"Ошибка получения пользователей: {e}")
+            return {"users": [], "total": 0, "page": page, "per_page": per_page, "pagination": {}}
+
+    async def get_broadcasts_paginated(self, page: int = 1, per_page: int = 20) -> Dict[str, Any]:
+        """Получить рассылки с пагинацией"""
+        try:
+            adapter = DatabaseAdapter(self.database_url)
+            await adapter.connect()
+
+            offset = (page - 1) * per_page
+
+            # Общее количество
+            count_query = "SELECT COUNT(*) FROM broadcasts"
+            total = await adapter.fetch_one(count_query)
+            total = total[0] if total else 0
+
+            # Рассылки с информацией о создателе
+            if adapter.db_type == 'sqlite':
+                broadcasts_query = """
+                    SELECT b.*, au.username as created_by_username
+                    FROM broadcasts b
+                    LEFT JOIN admin_users au ON b.created_by = au.id
+                    ORDER BY b.created_at DESC
+                    LIMIT ? OFFSET ?
+                """
+                params = [per_page, offset]
+            else:  # PostgreSQL
+                broadcasts_query = """
+                    SELECT b.*, au.username as created_by_username
+                    FROM broadcasts b
+                    LEFT JOIN admin_users au ON b.created_by = au.id
+                    ORDER BY b.created_at DESC
+                    LIMIT $1 OFFSET $2
+                """
+                params = [per_page, offset]
+
+            broadcasts = await adapter.fetch_all(broadcasts_query, params)
+
+            await adapter.disconnect()
+
+            return {
+                "broadcasts": [dict(broadcast) for broadcast in broadcasts] if broadcasts else [],
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+                "pagination": {
+                    "current_page": page,
+                    "total_pages": (total + per_page - 1) // per_page,
+                    "has_prev": page > 1,
+                    "has_next": page * per_page < total,
+                    "prev_page": page - 1 if page > 1 else None,
+                    "next_page": page + 1 if page * per_page < total else None
+                }
+            }
+        except Exception as e:
+            logger.error(f"Ошибка получения рассылок: {e}")
+            return {"broadcasts": [], "total": 0, "page": page, "per_page": per_page, "pagination": {}}
+
+    async def get_broadcasts_stats(self) -> Dict[str, Any]:
+        """Получить статистику рассылок"""
+        try:
+            adapter = DatabaseAdapter(self.database_url)
+            await adapter.connect()
+
+            stats = {}
+
+            # Общее количество рассылок
+            total_query = "SELECT COUNT(*) FROM broadcasts"
+            total = await adapter.fetch_one(total_query)
+            stats['total'] = total[0] if total else 0
+
+            # Рассылки по статусам
+            status_query = """
+                SELECT status, COUNT(*) as count
+                FROM broadcasts
+                GROUP BY status
+            """
+            status_results = await adapter.fetch_all(status_query)
+            stats['by_status'] = {row[0]: row[1] for row in status_results} if status_results else {}
+
+            await adapter.disconnect()
+            return stats
+        except Exception as e:
+            logger.error(f"Ошибка получения статистики рассылок: {e}")
+            return {"total": 0, "by_status": {}}
+
 
 # Глобальный экземпляр менеджера
 db_manager = ProductionDatabaseManager()
