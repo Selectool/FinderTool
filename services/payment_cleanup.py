@@ -101,13 +101,13 @@ class PaymentCleanupService:
                 else:
                     logger.debug("✨ Просроченных инвойсов не найдено")
 
-            return cleanup_stats
-
         except Exception as e:
             logger.error(f"❌ Ошибка при очистке просроченных инвойсов: {e}")
-            return {'expired_found': 0, 'cancelled': 0, 'errors': 1}
+            cleanup_stats = {'expired_found': 0, 'cancelled': 0, 'errors': 1}
         finally:
             await adapter.disconnect()
+
+        return cleanup_stats
     
     async def cleanup_old_failed_payments(self, days_old: int = 7) -> int:
         """
@@ -199,13 +199,13 @@ class PaymentCleanupService:
                 if datetime.now() - oldest_time > timedelta(seconds=self.invoice_timeout):
                     stats['cleanup_needed'] = True
 
-            return stats
-
         except Exception as e:
             logger.error(f"❌ Ошибка при получении статистики очистки: {e}")
-            return {}
+            stats = {}
         finally:
             await adapter.disconnect()
+
+        return stats
     
     async def start_cleanup_scheduler(self):
         """Запуск планировщика очистки"""
