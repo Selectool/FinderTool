@@ -412,6 +412,40 @@ class ProductionDatabaseManager:
         except Exception as e:
             logger.error(f"Ошибка обновления времени входа для пользователя {user_id}: {e}")
 
+    async def log_admin_action(self, admin_user_id: int, action: str, resource_type: str,
+                             resource_id: int = None, details: dict = None,
+                             ip_address: str = None, user_agent: str = None):
+        """Записать действие админа в лог"""
+        try:
+            import json
+            # Создаем новое подключение для каждого запроса
+            adapter = DatabaseAdapter(self.database_url)
+            await adapter.connect()
+
+            if adapter.db_type == 'sqlite':
+                query = """
+                    INSERT INTO audit_logs
+                    (admin_user_id, action, resource_type, resource_id, details, ip_address, user_agent)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """
+            else:  # PostgreSQL
+                query = """
+                    INSERT INTO audit_logs
+                    (admin_user_id, action, resource_type, resource_id, details, ip_address, user_agent)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                """
+
+            await adapter.execute(query, (
+                admin_user_id, action, resource_type, resource_id,
+                json.dumps(details) if details else None, ip_address, user_agent
+            ))
+            await adapter.disconnect()
+
+            logger.info(f"Logged admin action: {action} on {resource_type} by admin {admin_user_id}")
+        except Exception as e:
+            logger.error(f"Ошибка логирования действия админа: {e}")
+            # Не прерываем выполнение из-за ошибки логирования
+
 
 # Глобальный экземпляр менеджера
 db_manager = ProductionDatabaseManager()
