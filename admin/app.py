@@ -55,17 +55,25 @@ async def lifespan(app: FastAPI):
     # Инициализация при запуске
     logger.info("Запуск админ-панели...")
 
-    # Используем глобальный адаптер БД вместо создания нового
+    # Используем production database manager для админ-панели
     try:
-        from database.db_adapter import get_global_db_adapter
-        db = get_global_db_adapter()
-        if db is None:
-            # Если глобальный адаптер не инициализирован, создаем новый
+        from database.production_manager import ProductionDatabaseManager
+        import os
+
+        # Проверяем, что используется PostgreSQL
+        database_url = os.getenv("DATABASE_URL", "sqlite:///bot.db")
+        if database_url.startswith("postgresql"):
+            # Используем production manager для PostgreSQL
+            db = ProductionDatabaseManager()
+            await db.initialize_database()
+        else:
+            # Fallback для SQLite
             from database.models import Database
             db = Database(DATABASE_PATH)
             await db.init_db()
-    except ImportError:
-        # Fallback для случая, если production адаптер недоступен
+    except Exception as e:
+        print(f"⚠️ Ошибка инициализации БД: {e}")
+        # Последний fallback
         from database.models import Database
         db = Database(DATABASE_PATH)
         await db.init_db()
