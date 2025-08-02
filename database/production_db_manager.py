@@ -172,8 +172,7 @@ class ProductionDatabaseManager:
             is_subscribed BOOLEAN DEFAULT FALSE,
             subscription_end TIMESTAMP,
             free_requests_used INTEGER DEFAULT 0,
-            is_admin BOOLEAN DEFAULT FALSE,
-            is_super_admin BOOLEAN DEFAULT FALSE,
+            role VARCHAR(50) DEFAULT 'user',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_payment_date TIMESTAMP,
@@ -329,7 +328,7 @@ class ProductionDatabaseManager:
         
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_users_subscription ON users(is_subscribed, subscription_end)",
-            "CREATE INDEX IF NOT EXISTS idx_users_admin ON users(is_admin, is_super_admin)",
+            "CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)",
             "CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status, created_at)",
             "CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id, status)",
             "CREATE INDEX IF NOT EXISTS idx_requests_user_date ON user_requests(user_id, created_at)",
