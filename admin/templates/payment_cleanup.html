@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="ru">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Управление очисткой платежей - Админ панель</title>
+		<link
+			href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"
+			rel="stylesheet"
+		/>
+		<link
+			href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+			rel="stylesheet"
+		/>
+		<style>
+			.status-card {
+				border-left: 4px solid #007bff;
+			}
+			.status-card.success {
+				border-left-color: #28a745;
+			}
+			.status-card.warning {
+				border-left-color: #ffc107;
+			}
+			.status-card.danger {
+				border-left-color: #dc3545;
+			}
+			.log-entry {
+				font-family: 'Courier New', monospace;
+				font-size: 0.9em;
+			}
+			.log-info {
+				color: #17a2b8;
+			}
+			.log-warning {
+				color: #ffc107;
+			}
+			.log-error {
+				color: #dc3545;
+			}
+			.log-success {
+				color: #28a745;
+			}
+			.auto-refresh {
+				position: fixed;
+				top: 20px;
+				right: 20px;
+				z-index: 1000;
+			}
+		</style>
+	</head>
+	<body>
+		<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+			<div class="container">
+				<a class="navbar-brand" href="/dashboard/">
+					<i class="fas fa-robot"></i> Админ панель
+				</a>
+				<div class="navbar-nav ms-auto">
+					<a class="nav-link" href="/dashboard/">
+						<i class="fas fa-home"></i> Главная
+					</a>
+					<a class="nav-link active" href="/payment-cleanup/payment-cleanup">
+						<i class="fas fa-broom"></i> Очистка платежей
+					</a>
+				</div>
+			</div>
+		</nav>
+
+		<div class="container mt-4">
+			<!-- Автообновление -->
+			<div class="auto-refresh">
+				<div class="form-check form-switch">
+					<input
+						class="form-check-input"
+						type="checkbox"
+						id="autoRefresh"
+						checked
+					/>
+					<label class="form-check-label" for="autoRefresh">
+						<small>Автообновление</small>
+					</label>
+				</div>
+			</div>
+
+			<h1 class="mb-4">
+				<i class="fas fa-broom"></i> Управление очисткой платежей
+			</h1>
+
+			<!-- Статус сервиса -->
+			<div class="row mb-4">
+				<div class="col-md-3">
+					<div class="card status-card" id="serviceStatusCard">
+						<div class="card-body text-center">
+							<i class="fas fa-cog fa-2x mb-2" id="serviceIcon"></i>
+							<h5>Сервис очистки</h5>
+							<span class="badge" id="serviceStatus">Загрузка...</span>
+						</div>
+					</div>
+				</div>
+				<div class="col-md-3">
+					<div class="card status-card" id="pendingCard">
+						<div class="card-body text-center">
+							<i class="fas fa-clock fa-2x mb-2 text-warning"></i>
+							<h5>Ожидающие</h5>
+							<h3 id="pendingCount">-</h3>
+						</div>
+					</div>
+				</div>
+				<div class="col-md-3">
+					<div class="card status-card" id="expiredCard">
+						<div class="card-body text-center">
+							<i class="fas fa-times-circle fa-2x mb-2 text-danger"></i>
+							<h5>Просроченные</h5>
+							<h3 id="expiredCount">-</h3>
+						</div>
+					</div>
+				</div>
+				<div class="col-md-3">
+					<div class="card status-card" id="cleanupNeededCard">
+						<div class="card-body text-center">
+							<i
+								class="fas fa-exclamation-triangle fa-2x mb-2"
+								id="cleanupIcon"
+							></i>
+							<h5>Требует очистки</h5>
+							<span class="badge" id="cleanupNeeded">-</span>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Управление -->
+			<div class="row mb-4">
+				<div class="col-md-6">
+					<div class="card">
+						<div class="card-header">
+							<h5><i class="fas fa-play-circle"></i> Управление сервисом</h5>
+						</div>
+						<div class="card-body">
+							<div class="d-grid gap-2">
+								<button class="btn btn-primary" id="manualCleanupBtn">
+									<i class="fas fa-broom"></i> Запустить ручную очистку
+								</button>
+								<button class="btn btn-success" id="toggleAutoCleanupBtn">
+									<i class="fas fa-toggle-on"></i>
+									<span id="toggleText">Включить автоочистку</span>
+								</button>
+								<button class="btn btn-info" id="refreshStatsBtn">
+									<i class="fas fa-sync"></i> Обновить статистику
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="col-md-6">
+					<div class="card">
+						<div class="card-header">
+							<h5><i class="fas fa-cogs"></i> Последний результат</h5>
+						</div>
+						<div class="card-body">
+							<div id="lastResult">
+								<p class="text-muted">Нет данных о последней очистке</p>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Конфигурация -->
+			<div class="card mb-4">
+				<div class="card-header">
+					<h5><i class="fas fa-sliders-h"></i> Конфигурация очистки</h5>
+				</div>
+				<div class="card-body">
+					<form id="configForm">
+						<div class="row">
+							<div class="col-md-4">
+								<div class="mb-3">
+									<label for="cleanupInterval" class="form-label"
+										>Интервал очистки (сек)</label
+									>
+									<input
+										type="number"
+										class="form-control"
+										id="cleanupInterval"
+										min="60"
+										max="3600"
+										value="300"
+									/>
+									<div class="form-text">От 60 до 3600 секунд</div>
+								</div>
+							</div>
+							<div class="col-md-4">
+								<div class="mb-3">
+									<label for="invoiceTimeout" class="form-label"
+										>Таймаут инвойса (сек)</label
+									>
+									<input
+										type="number"
+										class="form-control"
+										id="invoiceTimeout"
+										min="300"
+										max="7200"
+										value="1800"
+									/>
+									<div class="form-text">От 300 до 7200 секунд</div>
+								</div>
+							</div>
+							<div class="col-md-4">
+								<div class="mb-3">
+									<label for="oldPaymentsDays" class="form-label"
+										>Удалять платежи через (дней)</label
+									>
+									<input
+										type="number"
+										class="form-control"
+										id="oldPaymentsDays"
+										min="1"
+										max="30"
+										value="7"
+									/>
+									<div class="form-text">От 1 до 30 дней</div>
+								</div>
+							</div>
+						</div>
+						<div class="row">
+							<div class="col-md-6">
+								<div class="form-check">
+									<input
+										class="form-check-input"
+										type="checkbox"
+										id="autoCleanupEnabled"
+										checked
+									/>
+									<label class="form-check-label" for="autoCleanupEnabled">
+										Автоматическая очистка включена
+									</label>
+								</div>
+							</div>
+							<div class="col-md-6">
+								<div class="form-check">
+									<input
+										class="form-check-input"
+										type="checkbox"
+										id="deleteOldPayments"
+										checked
+									/>
+									<label class="form-check-label" for="deleteOldPayments">
+										Удалять старые неуспешные платежи
+									</label>
+								</div>
+							</div>
+						</div>
+						<div class="mt-3">
+							<button type="submit" class="btn btn-primary">
+								<i class="fas fa-save"></i> Сохранить конфигурацию
+							</button>
+						</div>
+					</form>
+				</div>
+			</div>
+
+			<!-- Логи -->
+			<div class="card">
+				<div
+					class="card-header d-flex justify-content-between align-items-center"
+				>
+					<h5><i class="fas fa-list"></i> Логи очистки</h5>
+					<div>
+						<select
+							class="form-select form-select-sm d-inline-block w-auto me-2"
+							id="logLevel"
+						>
+							<option value="">Все уровни</option>
+							<option value="INFO">INFO</option>
+							<option value="WARNING">WARNING</option>
+							<option value="ERROR">ERROR</option>
+						</select>
+						<button class="btn btn-sm btn-outline-danger" id="clearLogsBtn">
+							<i class="fas fa-trash"></i> Очистить
+						</button>
+					</div>
+				</div>
+				<div class="card-body">
+					<div id="logsContainer" style="max-height: 400px; overflow-y: auto">
+						<p class="text-muted">Загрузка логов...</p>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Модальные окна -->
+		<div class="modal fade" id="confirmModal" tabindex="-1">
+			<div class="modal-dialog">
+				<div class="modal-content">
+					<div class="modal-header">
+						<h5 class="modal-title">Подтверждение</h5>
+						<button
+							type="button"
+							class="btn-close"
+							data-bs-dismiss="modal"
+						></button>
+					</div>
+					<div class="modal-body" id="confirmModalBody">Вы уверены?</div>
+					<div class="modal-footer">
+						<button
+							type="button"
+							class="btn btn-secondary"
+							data-bs-dismiss="modal"
+						>
+							Отмена
+						</button>
+						<button type="button" class="btn btn-primary" id="confirmModalBtn">
+							Подтвердить
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+		<script>
+			// Глобальные переменные
+			let autoRefreshInterval
+			let currentConfig = {}
+
+			// Инициализация
+			document.addEventListener('DOMContentLoaded', function () {
+				loadInitialData()
+				setupEventListeners()
+				startAutoRefresh()
+			})
+
+			function setupEventListeners() {
+				// Автообновление
+				document
+					.getElementById('autoRefresh')
+					.addEventListener('change', function () {
+						if (this.checked) {
+							startAutoRefresh()
+						} else {
+							stopAutoRefresh()
+						}
+					})
+
+				// Кнопки управления
+				document
+					.getElementById('manualCleanupBtn')
+					.addEventListener('click', runManualCleanup)
+				document
+					.getElementById('toggleAutoCleanupBtn')
+					.addEventListener('click', toggleAutoCleanup)
+				document
+					.getElementById('refreshStatsBtn')
+					.addEventListener('click', loadStats)
+				document
+					.getElementById('clearLogsBtn')
+					.addEventListener('click', clearLogs)
+
+				// Форма конфигурации
+				document
+					.getElementById('configForm')
+					.addEventListener('submit', saveConfig)
+
+				// Фильтр логов
+				document.getElementById('logLevel').addEventListener('change', loadLogs)
+			}
+
+			function startAutoRefresh() {
+				stopAutoRefresh()
+				autoRefreshInterval = setInterval(() => {
+					loadStats()
+					loadLogs()
+				}, 10000) // Обновление каждые 10 секунд
+			}
+
+			function stopAutoRefresh() {
+				if (autoRefreshInterval) {
+					clearInterval(autoRefreshInterval)
+					autoRefreshInterval = null
+				}
+			}
+
+			async function loadInitialData() {
+				await Promise.all([loadStats(), loadConfig(), loadLogs()])
+			}
+
+			async function loadStats() {
+				try {
+					const response = await fetch('/api/payment-cleanup/status')
+					const data = await response.json()
+
+					updateStatusCards(data)
+					updateLastResult(data.last_result)
+				} catch (error) {
+					console.error('Ошибка загрузки статистики:', error)
+					showAlert('Ошибка загрузки статистики', 'danger')
+				}
+			}
+
+			function updateStatusCards(data) {
+				const stats = data.stats || {}
+				const config = data.config || {}
+
+				// Статус сервиса
+				const serviceCard = document.getElementById('serviceStatusCard')
+				const serviceIcon = document.getElementById('serviceIcon')
+				const serviceStatus = document.getElementById('serviceStatus')
+
+				if (data.service_running) {
+					serviceCard.className = 'card status-card success'
+					serviceIcon.className = 'fas fa-cog fa-2x mb-2 fa-spin text-success'
+					serviceStatus.className = 'badge bg-success'
+					serviceStatus.textContent = 'Активен'
+				} else {
+					serviceCard.className = 'card status-card danger'
+					serviceIcon.className = 'fas fa-cog fa-2x mb-2 text-danger'
+					serviceStatus.className = 'badge bg-danger'
+					serviceStatus.textContent = 'Остановлен'
+				}
+
+				// Ожидающие платежи
+				document.getElementById('pendingCount').textContent =
+					stats.pending_invoices || 0
+
+				// Просроченные платежи
+				document.getElementById('expiredCount').textContent =
+					stats.expired_invoices || 0
+
+				// Требует очистки
+				const cleanupNeeded = document.getElementById('cleanupNeeded')
+				const cleanupIcon = document.getElementById('cleanupIcon')
+				const cleanupCard = document.getElementById('cleanupNeededCard')
+
+				if (stats.cleanup_needed) {
+					cleanupNeeded.className = 'badge bg-warning'
+					cleanupNeeded.textContent = 'Да'
+					cleanupIcon.className =
+						'fas fa-exclamation-triangle fa-2x mb-2 text-warning'
+					cleanupCard.className = 'card status-card warning'
+				} else {
+					cleanupNeeded.className = 'badge bg-success'
+					cleanupNeeded.textContent = 'Нет'
+					cleanupIcon.className = 'fas fa-check-circle fa-2x mb-2 text-success'
+					cleanupCard.className = 'card status-card success'
+				}
+
+				// Кнопка автоочистки
+				const toggleBtn = document.getElementById('toggleAutoCleanupBtn')
+				const toggleText = document.getElementById('toggleText')
+
+				if (config.auto_cleanup_enabled) {
+					toggleBtn.className = 'btn btn-warning'
+					toggleBtn.innerHTML =
+						'<i class="fas fa-toggle-off"></i> <span id="toggleText">Выключить автоочистку</span>'
+				} else {
+					toggleBtn.className = 'btn btn-success'
+					toggleBtn.innerHTML =
+						'<i class="fas fa-toggle-on"></i> <span id="toggleText">Включить автоочистку</span>'
+				}
+			}
+
+			function updateLastResult(result) {
+				const container = document.getElementById('lastResult')
+
+				if (!result) {
+					container.innerHTML =
+						'<p class="text-muted">Нет данных о последней очистке</p>'
+					return
+				}
+
+				const statusClass = result.success ? 'success' : 'danger'
+				const statusIcon = result.success ? 'check-circle' : 'times-circle'
+
+				container.innerHTML = `
+                <div class="d-flex align-items-center mb-2">
+                    <i class="fas fa-${statusIcon} text-${statusClass} me-2"></i>
+                    <strong>${result.success ? 'Успешно' : 'Ошибка'}</strong>
+                </div>
+                <p class="mb-1">${result.message}</p>
+                <small class="text-muted">
+                    Найдено: ${result.expired_found} | 
+                    Отменено: ${result.cancelled} | 
+                    Ошибок: ${result.errors} | 
+                    Время: ${result.execution_time.toFixed(2)}с
+                </small>
+            `
+			}
+
+			async function loadConfig() {
+				try {
+					const response = await fetch('/api/payment-cleanup/config')
+					const config = await response.json()
+
+					currentConfig = config
+
+					document.getElementById('cleanupInterval').value =
+						config.cleanup_interval
+					document.getElementById('invoiceTimeout').value =
+						config.invoice_timeout
+					document.getElementById('oldPaymentsDays').value =
+						config.old_payments_days
+					document.getElementById('autoCleanupEnabled').checked =
+						config.auto_cleanup_enabled
+					document.getElementById('deleteOldPayments').checked =
+						config.delete_old_payments
+				} catch (error) {
+					console.error('Ошибка загрузки конфигурации:', error)
+					showAlert('Ошибка загрузки конфигурации', 'danger')
+				}
+			}
+
+			async function saveConfig(event) {
+				event.preventDefault()
+
+				const config = {
+					cleanup_interval: parseInt(
+						document.getElementById('cleanupInterval').value
+					),
+					invoice_timeout: parseInt(
+						document.getElementById('invoiceTimeout').value
+					),
+					old_payments_days: parseInt(
+						document.getElementById('oldPaymentsDays').value
+					),
+					auto_cleanup_enabled:
+						document.getElementById('autoCleanupEnabled').checked,
+					delete_old_payments:
+						document.getElementById('deleteOldPayments').checked,
+				}
+
+				try {
+					const response = await fetch('/api/payment-cleanup/config', {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify(config),
+					})
+
+					if (response.ok) {
+						showAlert('Конфигурация сохранена', 'success')
+						currentConfig = config
+						loadStats() // Обновляем статистику
+					} else {
+						throw new Error('Ошибка сохранения')
+					}
+				} catch (error) {
+					console.error('Ошибка сохранения конфигурации:', error)
+					showAlert('Ошибка сохранения конфигурации', 'danger')
+				}
+			}
+
+			async function runManualCleanup() {
+				const btn = document.getElementById('manualCleanupBtn')
+				const originalText = btn.innerHTML
+
+				btn.disabled = true
+				btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Выполняется...'
+
+				try {
+					const response = await fetch('/api/payment-cleanup/manual', {
+						method: 'POST',
+					})
+					const result = await response.json()
+
+					if (result.success) {
+						showAlert(
+							`Очистка завершена: найдено ${result.expired_found}, отменено ${result.cancelled}`,
+							'success'
+						)
+					} else {
+						showAlert(`Ошибка очистки: ${result.message}`, 'danger')
+					}
+
+					loadStats() // Обновляем статистику
+					loadLogs() // Обновляем логи
+				} catch (error) {
+					console.error('Ошибка ручной очистки:', error)
+					showAlert('Ошибка выполнения очистки', 'danger')
+				} finally {
+					btn.disabled = false
+					btn.innerHTML = originalText
+				}
+			}
+
+			async function toggleAutoCleanup() {
+				const enabled = !currentConfig.auto_cleanup_enabled
+
+				try {
+					const response = await fetch(
+						`/api/payment-cleanup/toggle?enabled=${enabled}`,
+						{
+							method: 'POST',
+						}
+					)
+					const result = await response.json()
+
+					showAlert(result.message, 'success')
+					loadStats() // Обновляем статистику
+					loadLogs() // Обновляем логи
+				} catch (error) {
+					console.error('Ошибка переключения автоочистки:', error)
+					showAlert('Ошибка переключения автоочистки', 'danger')
+				}
+			}
+
+			async function loadLogs() {
+				const level = document.getElementById('logLevel').value
+				const params = new URLSearchParams()
+				if (level) params.append('level', level)
+				params.append('limit', '50')
+
+				try {
+					const response = await fetch(`/api/payment-cleanup/logs?${params}`)
+					const data = await response.json()
+
+					const container = document.getElementById('logsContainer')
+
+					if (data.logs.length === 0) {
+						container.innerHTML =
+							'<p class="text-muted">Нет логов для отображения</p>'
+						return
+					}
+
+					const logsHtml = data.logs
+						.reverse()
+						.map(log => {
+							const levelClass = `log-${log.level.toLowerCase()}`
+							const timestamp = new Date(log.timestamp).toLocaleString('ru-RU')
+
+							return `
+                        <div class="log-entry mb-2 p-2 border-start border-2">
+                            <div class="d-flex justify-content-between">
+                                <span class="${levelClass} fw-bold">[${
+								log.level
+							}]</span>
+                                <small class="text-muted">${timestamp}</small>
+                            </div>
+                            <div>${log.message}</div>
+                            ${
+															log.details
+																? `<small class="text-muted">${JSON.stringify(
+																		log.details
+																  )}</small>`
+																: ''
+														}
+                        </div>
+                    `
+						})
+						.join('')
+
+					container.innerHTML = logsHtml
+				} catch (error) {
+					console.error('Ошибка загрузки логов:', error)
+					document.getElementById('logsContainer').innerHTML =
+						'<p class="text-danger">Ошибка загрузки логов</p>'
+				}
+			}
+
+			async function clearLogs() {
+				if (!confirm('Вы уверены, что хотите очистить все логи?')) {
+					return
+				}
+
+				try {
+					const response = await fetch('/api/payment-cleanup/logs', {
+						method: 'DELETE',
+					})
+					const result = await response.json()
+
+					showAlert(result.message, 'success')
+					loadLogs() // Обновляем логи
+				} catch (error) {
+					console.error('Ошибка очистки логов:', error)
+					showAlert('Ошибка очистки логов', 'danger')
+				}
+			}
+
+			function showAlert(message, type) {
+				const alertDiv = document.createElement('div')
+				alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`
+				alertDiv.style.cssText =
+					'top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; min-width: 300px;'
+				alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `
+
+				document.body.appendChild(alertDiv)
+
+				setTimeout(() => {
+					if (alertDiv.parentNode) {
+						alertDiv.parentNode.removeChild(alertDiv)
+					}
+				}, 5000)
+			}
+		</script>
+	</body>
+</html>

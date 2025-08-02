@@ -489,8 +489,8 @@ class ProductionDatabaseManager:
 
             # Общее количество
             count_query = f"SELECT COUNT(*) FROM users WHERE {where_clause}"
-            total = await adapter.fetch_one(count_query, params)
-            total = total[0] if total else 0
+            total_result = await adapter.fetch_one(count_query, params)
+            total = total_result[0] if total_result else 0
 
             # Пользователи
             if adapter.db_type == 'sqlite':
@@ -542,8 +542,8 @@ class ProductionDatabaseManager:
 
             # Общее количество
             count_query = "SELECT COUNT(*) FROM broadcasts"
-            total = await adapter.fetch_one(count_query)
-            total = total[0] if total else 0
+            total_result = await adapter.fetch_one(count_query)
+            total = total_result[0] if total_result else 0
 
             # Рассылки с информацией о создателе
             if adapter.db_type == 'sqlite':
@@ -597,8 +597,8 @@ class ProductionDatabaseManager:
 
             # Общее количество рассылок
             total_query = "SELECT COUNT(*) FROM broadcasts"
-            total = await adapter.fetch_one(total_query)
-            stats['total'] = total[0] if total else 0
+            total_result = await adapter.fetch_one(total_query)
+            stats['total'] = total_result[0] if total_result else 0
 
             # Рассылки по статусам
             status_query = """
