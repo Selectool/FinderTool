@@ -130,9 +130,55 @@ def get_user_permissions(role: str) -> list:
 def check_permission(user_role: str, required_permission: str) -> bool:
     """Проверить разрешение пользователя"""
     user_permissions = get_user_permissions(user_role)
-    
+
     # Супер админ имеет все права
     if "*" in user_permissions:
         return True
-    
+
     return required_permission in user_permissions
+
+
+def require_admin(permission: str = None):
+    """
+    Декоратор для проверки прав администратора
+
+    Args:
+        permission: Требуемое разрешение (опционально)
+    """
+    from functools import wraps
+    from fastapi import Depends, HTTPException, status
+    from fastapi.security import HTTPBearer
+
+    security = HTTPBearer()
+
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            # Получаем токен из зависимостей
+            token = kwargs.get('token') or (args[0] if args else None)
+
+            if not token:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Токен не предоставлен"
+                )
+
+            # Проверяем токен
+            token_data = verify_token(token.credentials if hasattr(token, 'credentials') else str(token))
+            if not token_data:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Недействительный токен"
+                )
+
+            # Проверяем разрешения если указаны
+            if permission and not check_permission(token_data.role, permission):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Недостаточно прав для {permission}"
+                )
+
+            return await func(*args, **kwargs)
+
+        return wrapper
+    return decorator
