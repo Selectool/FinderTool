@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """
-Универсальный запуск Telegram бота и админ-панели одновременно
-Для использования в Dokploy production
+Запуск только Telegram бота без админ-панели
+Для случаев когда админ-панель не нужна или есть проблемы с ее запуском
 """
 
 import asyncio
 import logging
 import signal
 import sys
-from concurrent.futures import ThreadPoolExecutor
-import threading
-import time
 
 # Настройка логирования
 logging.basicConfig(
@@ -21,13 +18,11 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-class ServiceManager:
-    """Менеджер для управления несколькими сервисами"""
+class BotManager:
+    """Менеджер для управления только ботом"""
     
     def __init__(self):
-        self.services = {}
         self.running = True
-        self.executor = ThreadPoolExecutor(max_workers=3)
     
     async def start_telegram_bot(self):
         """Запуск Telegram бота"""
@@ -42,52 +37,20 @@ class ServiceManager:
             logger.exception("Детали ошибки:")
             raise
     
-    def start_admin_panel(self):
-        """Запуск админ-панели в отдельном потоке"""
-        logger.info("🌐 Запуск админ-панели...")
-        
-        try:
-            import uvicorn
-            from admin.app import app
-            
-            # Настройки для production
-            config = uvicorn.Config(
-                app=app,
-                host="0.0.0.0",
-                port=8080,
-                log_level="info",
-                access_log=True,
-                loop="asyncio"
-            )
-            
-            server = uvicorn.Server(config)
-            
-            # Запускаем в новом event loop для этого потока
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            logger.info("✅ Админ-панель запущена на порту 8080")
-            loop.run_until_complete(server.serve())
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка запуска админ-панели: {e}")
-            logger.exception("Детали ошибки:")
-            raise
-    
     async def health_monitor(self):
-        """Мониторинг здоровья сервисов"""
+        """Мониторинг здоровья бота"""
         logger.info("💓 Запуск мониторинга здоровья...")
         
         while self.running:
             try:
-                # Проверяем каждые 30 секунд
-                await asyncio.sleep(30)
+                # Проверяем каждые 60 секунд
+                await asyncio.sleep(60)
                 
                 if not self.running:
                     break
                 
                 # Простая проверка здоровья
-                logger.info("💓 Проверка здоровья сервисов...")
+                logger.info("💓 Проверка здоровья бота...")
                 
                 # Проверяем базу данных
                 try:
@@ -100,37 +63,30 @@ class ServiceManager:
                 except Exception as e:
                     logger.warning(f"⚠️ Ошибка проверки БД: {e}")
                 
-                logger.info("💓 Все сервисы работают")
+                logger.info("💓 Бот работает нормально")
                 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"❌ Ошибка мониторинга: {e}")
     
-    async def start_all_services(self):
-        """Запуск всех сервисов одновременно"""
+    async def start_bot_service(self):
+        """Запуск только бота с мониторингом"""
         logger.info("=" * 60)
-        logger.info("🚀 ЗАПУСК TELEGRAM CHANNEL FINDER BOT")
+        logger.info("🤖 ЗАПУСК TELEGRAM CHANNEL FINDER BOT")
         logger.info("=" * 60)
-        logger.info("🤖 Telegram Bot + 🌐 Admin Panel + 💓 Health Monitor")
+        logger.info("🤖 Только Telegram Bot + 💓 Health Monitor")
+        logger.info("🌐 Админ-панель: ОТКЛЮЧЕНА")
         logger.info("=" * 60)
         
         try:
-            # Запускаем админ-панель в отдельном потоке
-            admin_future = self.executor.submit(self.start_admin_panel)
-            logger.info("✅ Админ-панель запускается в фоновом режиме...")
-            
-            # Небольшая задержка для запуска админ-панели
-            await asyncio.sleep(2)
-            
             # Создаем задачи для бота и мониторинга
             tasks = [
                 asyncio.create_task(self.start_telegram_bot(), name="telegram_bot"),
                 asyncio.create_task(self.health_monitor(), name="health_monitor")
             ]
             
-            logger.info("✅ Все сервисы запущены!")
-            logger.info("🌐 Админ-панель: http://0.0.0.0:8080")
+            logger.info("✅ Бот запущен!")
             logger.info("🤖 Telegram бот: активен")
             logger.info("💓 Мониторинг: активен")
             logger.info("=" * 60)
@@ -144,7 +100,6 @@ class ServiceManager:
             raise
         finally:
             self.running = False
-            self.executor.shutdown(wait=True)
     
     def setup_signal_handlers(self):
         """Настройка обработчиков сигналов для graceful shutdown"""
@@ -161,18 +116,18 @@ class ServiceManager:
 
 async def main():
     """Основная функция"""
-    service_manager = ServiceManager()
-    service_manager.setup_signal_handlers()
+    bot_manager = BotManager()
+    bot_manager.setup_signal_handlers()
     
     try:
-        await service_manager.start_all_services()
+        await bot_manager.start_bot_service()
     except KeyboardInterrupt:
         logger.info("⚠️ Получен сигнал прерывания")
     except Exception as e:
         logger.error(f"❌ Критическая ошибка: {e}")
         sys.exit(1)
     finally:
-        logger.info("🛑 Завершение работы всех сервисов...")
+        logger.info("🛑 Завершение работы бота...")
         logger.info("=" * 60)
         logger.info("👋 TELEGRAM CHANNEL FINDER BOT ОСТАНОВЛЕН")
         logger.info("=" * 60)
@@ -181,7 +136,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n⚠️ Приложение остановлено пользователем")
+        print("\n⚠️ Бот остановлен пользователем")
     except Exception as e:
         print(f"❌ Критическая ошибка: {e}")
         sys.exit(1)
