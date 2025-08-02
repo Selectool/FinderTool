@@ -335,6 +335,137 @@ class ProductionDatabaseManager:
 production_db_manager = ProductionDatabaseManager()
 
 
+    async def _create_admin_users_table(self, adapter: DatabaseAdapter):
+        """Создает таблицу admin_users"""
+        if self.db_type == 'postgresql':
+            query = """
+                CREATE TABLE IF NOT EXISTS admin_users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(255) UNIQUE NOT NULL,
+                    email VARCHAR(255) UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    role VARCHAR(100) NOT NULL DEFAULT 'moderator',
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_login TIMESTAMP,
+                    telegram_id BIGINT UNIQUE
+                )
+            """
+        else:
+            query = """
+                CREATE TABLE IF NOT EXISTS admin_users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'moderator',
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_login TIMESTAMP,
+                    telegram_id INTEGER UNIQUE
+                )
+            """
+
+        await adapter.execute(query)
+
+    async def _create_roles_table(self, adapter: DatabaseAdapter):
+        """Создает таблицу roles"""
+        if self.db_type == 'postgresql':
+            query = """
+                CREATE TABLE IF NOT EXISTS roles (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(100) UNIQUE NOT NULL,
+                    description TEXT,
+                    permissions TEXT,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """
+        else:
+            query = """
+                CREATE TABLE IF NOT EXISTS roles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT UNIQUE NOT NULL,
+                    description TEXT,
+                    permissions TEXT,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """
+
+        await adapter.execute(query)
+
+    async def _create_message_templates_table(self, adapter: DatabaseAdapter):
+        """Создает таблицу message_templates"""
+        if self.db_type == 'postgresql':
+            query = """
+                CREATE TABLE IF NOT EXISTS message_templates (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    subject VARCHAR(500),
+                    content TEXT NOT NULL,
+                    template_type VARCHAR(100) DEFAULT 'broadcast',
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_by INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """
+        else:
+            query = """
+                CREATE TABLE IF NOT EXISTS message_templates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    subject TEXT,
+                    content TEXT NOT NULL,
+                    template_type TEXT DEFAULT 'broadcast',
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_by INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """
+
+        await adapter.execute(query)
+
+    async def _create_audit_logs_table(self, adapter: DatabaseAdapter):
+        """Создает таблицу audit_logs"""
+        if self.db_type == 'postgresql':
+            query = """
+                CREATE TABLE IF NOT EXISTS audit_logs (
+                    id SERIAL PRIMARY KEY,
+                    admin_user_id INTEGER,
+                    action VARCHAR(255) NOT NULL,
+                    resource_type VARCHAR(100) NOT NULL,
+                    resource_id INTEGER,
+                    details TEXT,
+                    ip_address VARCHAR(45),
+                    user_agent TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """
+        else:
+            query = """
+                CREATE TABLE IF NOT EXISTS audit_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    admin_user_id INTEGER,
+                    action TEXT NOT NULL,
+                    resource_type TEXT NOT NULL,
+                    resource_id INTEGER,
+                    details TEXT,
+                    ip_address TEXT,
+                    user_agent TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """
+
+        await adapter.execute(query)
+
+
+# Глобальный экземпляр
+production_db_manager = ProductionDatabaseManager()
+
+
 async def initialize_production_database(database_url: str = None) -> Dict[str, Any]:
     """
     Функция для инициализации production базы данных
@@ -343,5 +474,5 @@ async def initialize_production_database(database_url: str = None) -> Dict[str, 
         manager = ProductionDatabaseManager(database_url)
     else:
         manager = production_db_manager
-    
+
     return await manager.initialize_production_database()
