@@ -61,14 +61,30 @@ except ImportError as e:
 async def main():
     """Главная функция запуска бота"""
 
-    # Автоматическое применение миграций
+    # Production-ready система миграций
     try:
-        from database.migration_manager import auto_migrate
+        logger.info("🚀 Запуск production-ready системы миграций...")
+
+        # Получаем URL базы данных
         database_url = os.getenv('DATABASE_URL', 'sqlite:///bot.db')
+
+        # Исправляем конфликты миграций
+        from database.unified_migration_manager import fix_migration_conflicts
+        migration_success = await fix_migration_conflicts(database_url)
+
+        if migration_success:
+            logger.info("✅ Unified система миграций успешно применена")
+        else:
+            logger.warning("⚠️ Проблемы с миграциями, но продолжаем работу")
+
+        # Запускаем стандартные миграции
+        from database.migration_manager import auto_migrate
         await auto_migrate(database_url)
-        logger.info("✅ Миграции применены")
+        logger.info("✅ Стандартные миграции применены")
+
     except Exception as e:
         logger.warning(f"⚠️ Ошибка миграций: {e}")
+        logger.info("🔄 Продолжаем работу без миграций...")
 
     # Проверяем наличие необходимых конфигураций
     if not BOT_TOKEN:

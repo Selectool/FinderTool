@@ -521,6 +521,7 @@ def show_help():
   python production_startup.py stop             - Остановка всех сервисов
   python production_startup.py logs [service]   - Просмотр логов
 
+  
 🔧 Управление:
   python production_startup.py migrate          - Применить миграции
   python production_startup.py health           - Проверка состояния системы
