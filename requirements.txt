@@ -1,0 +1,56 @@
+# ================================
+# PRODUCTION REQUIREMENTS
+# Telegram Channel Finder Bot
+# Optimized for Railway/Railpack deployment
+# ================================
+
+# ============ CORE TELEGRAM BOT ============
+aiogram==3.13.1
+telethon==1.36.0
+aiofiles==24.1.0
+python-dotenv==1.0.1
+aiosqlite==0.20.0
+cryptography==42.0.8
+prettytable==3.10.0
+
+# ============ DATABASE DRIVERS ============
+# PostgreSQL support for production
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+
+# ============ PAYMENT SYSTEM ============
+yookassa==3.6.0
+
+# ============ WEB ADMIN PANEL ============
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+jinja2==3.1.2
+python-multipart==0.0.6
+
+# ============ AUTHENTICATION & SECURITY ============
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+
+# ============ DATA PROCESSING & EXPORT ============
+pandas>=2.2.0
+openpyxl>=3.1.2
+reportlab>=4.0.7
+xlsxwriter>=3.1.9
+
+# ============ HTTP CLIENT & API ============
+httpx>=0.25.2
+
+# ============ VALIDATION & SERIALIZATION ============
+pydantic>=2.5.0
+email-validator>=2.1.0
+
+# ============ BACKGROUND TASKS & SCHEDULING ============
+apscheduler>=3.10.4
+
+# ============ MONITORING & LOGGING ============
+structlog>=23.2.0
+
+# ============ PRODUCTION UTILITIES ============
+schedule>=1.2.0
+psutil>=5.9.0
