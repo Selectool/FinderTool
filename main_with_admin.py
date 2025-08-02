@@ -50,14 +50,17 @@ async def main_integrated():
         # Сначала инициализируем production database manager
         print("🗄️ Инициализация production базы данных...")
         from database.production_manager import ProductionDatabaseManager
-        from database.db_adapter import set_global_db_adapter
+        from database.db_adapter import set_database, DatabaseAdapter
 
         # Создаем и инициализируем production manager
         production_manager = ProductionDatabaseManager()
         await production_manager.initialize_database()
 
-        # Устанавливаем глобальный адаптер
-        set_global_db_adapter(production_manager)
+        # Создаем адаптер и устанавливаем глобально
+        database_url = os.getenv("DATABASE_URL", "sqlite:///bot.db")
+        adapter = DatabaseAdapter(database_url)
+        await adapter.connect()
+        set_database(adapter)
         print("✅ Production база данных инициализирована")
 
         # Запускаем админ-панель в отдельном потоке
