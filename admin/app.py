@@ -54,10 +54,21 @@ async def lifespan(app: FastAPI):
     """Управление жизненным циклом приложения"""
     # Инициализация при запуске
     logger.info("Запуск админ-панели...")
-    
-    # Инициализация базы данных
-    db = Database(DATABASE_PATH)
-    await db.init_db()
+
+    # Используем глобальный адаптер БД вместо создания нового
+    try:
+        from database.db_adapter import get_global_db_adapter
+        db = get_global_db_adapter()
+        if db is None:
+            # Если глобальный адаптер не инициализирован, создаем новый
+            from database.models import Database
+            db = Database(DATABASE_PATH)
+            await db.init_db()
+    except ImportError:
+        # Fallback для случая, если production адаптер недоступен
+        from database.models import Database
+        db = Database(DATABASE_PATH)
+        await db.init_db()
 
     # Инициализация системы прав доступа для рассылок
     await init_broadcast_permissions(db)
