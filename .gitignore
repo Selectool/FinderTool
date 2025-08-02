@@ -1,0 +1,224 @@
+# ================================
+# PRODUCTION-READY .gitignore
+# Telegram Channel Finder Bot
+# ================================
+
+# ============ PYTHON ============
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ============ VIRTUAL ENVIRONMENT ============
+.venv/
+venv/
+ENV/
+env/
+.virtualenv/
+
+# ============ ENVIRONMENT & CONFIG ============
+.env
+.env.*
+!.env.example
+config_local.py
+local_settings.py
+
+# ============ SECURITY & CREDENTIALS ============
+# Session generation scripts (содержат API ключи)
+generate_session.py
+session_generator.py
+create_session.py
+get_ngrok_url.py
+clean_test_payments.py
+
+# Токены и ключи
+*token*
+*key*
+*secret*
+*password*
+*credentials*
+!requirements.txt
+
+# ============ DATABASE ============
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.sqlite-journal
+bot.db
+admin/bot.db
+database/*.db
+
+# ============ TELETHON SESSION FILES ============
+*.session
+*.session-journal
+bot_session*
+user_session*
+
+# ============ LOGS ============
+*.log
+logs/
+*.log.*
+log_*
+
+# ============ TESTING & DEVELOPMENT ============
+# Тестовые файлы
+test_*.py
+*_test.py
+tests/
+testing/
+pytest_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Временные и отладочные файлы
+debug_*.py
+temp_*.py
+tmp_*.py
+scratch_*.py
+playground_*.py
+
+# Проверочные скрипты
+check_*.py
+verify_*.py
+validate_*.py
+
+# Очистка и утилиты разработки
+cleanup_*.py
+# production_*.py  # РАЗРЕШАЕМ production файлы для деплоя
+simple_*.py
+update_*.py
+
+# ============ DOCUMENTATION (DEVELOPMENT) ============
+# Документация разработки (не для production)
+SETUP.md
+PRODUCTION_DEPLOYMENT.md
+ENTERPRISE_FEATURES.md
+ADMIN_USER_MANAGEMENT.md
+PAYMENT_SYSTEM_FIXES.md
+DEPLOYMENT_CHECKLIST.md
+session_generation_guide.md
+YOOKASSA_INTEGRATION_GUIDE.md
+REPOSITORY_CLEANUP_REPORT.md
+DEVELOPMENT_*.md
+TESTING_*.md
+BROADCAST_SYSTEM_BOT.md
+USER_MANAGEMENT_BOT.md
+YOOKASSA_LIVE_PAYMENT_FIX.md
+QUICK_START.md
+DOKPLOY_DEPLOYMENT.md
+DOKPLOY_DATABASE_SETUP.md
+PRODUCTION_DATABASE_GUIDE.md
+PRODUCTION_ENVIRONMENT_VARIABLES.md
+README_PRODUCTION.md
+PRODUCTION_SETUP.md
+RAILWAY_DEPLOYMENT.md
+DOKPLOY_SETUP.md
+docs/
+backups/
+
+# ============ UPLOADS & MEDIA ============
+uploads/
+media/
+static/uploads/
+admin/uploads/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.pdf
+*.zip
+*.tar.gz
+
+# ============ IDE & EDITORS ============
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.sublime-project
+.sublime-workspace
+*.code-workspace
+
+# ============ OS SPECIFIC ============
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ============ BACKUP & TEMPORARY ============
+*.bak
+*.backup
+*.tmp
+*.temp
+*~
+.#*
+#*#
+
+# ============ DEPLOYMENT ============
+# Railway/Railpack specific
+.railway/
+railway.toml
+railway.json
+
+# Docker (legacy - removed for Railpack)
+# .dockerignore
+# docker-compose.override.yml
+# .docker/
+
+# Kubernetes
+k8s/
+kubernetes/
+
+# Nixpacks (legacy - not used with Railpack)
+nixpacks.toml
+.nixpacks/
+
+# Paketo Buildpacks (legacy - not used with Railpack)
+project.toml
+buildpack.yml
+
+# ============ MONITORING & ANALYTICS ============
+# Метрики и аналитика
+metrics/
+analytics/
+monitoring/
+
+# ============ CACHE ============
+.cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ============ SPECIFIC TO PROJECT ============
+# Админ панель временные файлы
+admin/temp/
+admin/cache/
+
+# Сервисы разработки
+services/test_*
+services/dev_*
+
