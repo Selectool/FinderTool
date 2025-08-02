@@ -3,6 +3,7 @@
 """
 import asyncio
 import logging
+import os
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -59,7 +60,16 @@ except ImportError as e:
 
 async def main():
     """Главная функция запуска бота"""
-    
+
+    # Автоматическое применение миграций
+    try:
+        from database.migration_manager import auto_migrate
+        database_url = os.getenv('DATABASE_URL', 'sqlite:///bot.db')
+        await auto_migrate(database_url)
+        logger.info("✅ Миграции применены")
+    except Exception as e:
+        logger.warning(f"⚠️ Ошибка миграций: {e}")
+
     # Проверяем наличие необходимых конфигураций
     if not BOT_TOKEN:
         logger.error("BOT_TOKEN не установлен!")

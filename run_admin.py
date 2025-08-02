@@ -59,10 +59,24 @@ def check_environment():
             print("\nИсправьте конфигурацию перед запуском в продакшн режиме!")
             sys.exit(1)
 
+async def run_migrations():
+    """Запустить миграции перед стартом админ-панели"""
+    try:
+        from database.migration_manager import auto_migrate
+        database_url = os.getenv('DATABASE_URL', 'sqlite:///bot.db')
+        await auto_migrate(database_url)
+        print("✅ Миграции применены")
+    except Exception as e:
+        print(f"⚠️ Ошибка миграций: {e}")
+
 if __name__ == "__main__":
     try:
         check_environment()
         print_startup_info()
+
+        # Применяем миграции перед запуском
+        import asyncio
+        asyncio.run(run_migrations())
 
         uvicorn.run(
             "admin.app:app",
