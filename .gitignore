@@ -104,7 +104,7 @@ validate_*.py
 
 # Очистка и утилиты разработки
 cleanup_*.py
-production_*.py
+# production_*.py  # РАЗРЕШАЕМ production файлы для деплоя
 simple_*.py
 update_*.py
 
