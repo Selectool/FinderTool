@@ -330,12 +330,17 @@ class UniversalDatabase:
             result = await self.adapter.fetch_one("SELECT COUNT(*) FROM users")
             await self.adapter.disconnect()
 
-            if result:
+            if result is not None:
                 # Обрабатываем разные типы результатов
-                if hasattr(result, '__getitem__'):
-                    return int(result[0])
+                if hasattr(result, '__getitem__') and len(result) > 0:
+                    count = result[0]
+                elif hasattr(result, 'count'):
+                    count = result.count
                 else:
-                    return int(result)
+                    count = result
+
+                # Преобразуем в int
+                return int(count) if count is not None else 0
             return 0
 
         except Exception as e:
@@ -514,9 +519,11 @@ class UniversalDatabase:
     # ========== МЕТОДЫ ДЛЯ РАССЫЛОК ==========
 
     async def create_broadcast(self, title: str, message_text: str, target_users: str = "all",
-                              scheduled_time: datetime = None, created_by: int = None) -> int:
+                              scheduled_time: datetime = None, created_by: int = None,
+                              parse_mode: str = None) -> int:
         """Создать рассылку"""
         try:
+            # parse_mode игнорируется для совместимости
             await self.adapter.connect()
 
             if self.adapter.db_type == 'sqlite':
