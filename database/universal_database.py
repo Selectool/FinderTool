@@ -598,7 +598,15 @@ class UniversalDatabase:
 
             if self.adapter.db_type == 'postgresql':
                 result = await self.adapter.fetch_one(query, params)
-                broadcast_id = result[0] if result else None
+                if result:
+                    if isinstance(result, dict):
+                        broadcast_id = result.get('id')
+                    elif hasattr(result, '__getitem__'):
+                        broadcast_id = result[0]
+                    else:
+                        broadcast_id = getattr(result, 'id', None)
+                else:
+                    broadcast_id = None
             else:
                 await self.adapter.execute(query, params)
                 # Для SQLite получаем последний ID

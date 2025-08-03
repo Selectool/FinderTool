@@ -7,7 +7,7 @@ from datetime import datetime
 from pydantic import BaseModel
 import asyncio
 import logging
-import aiosqlite
+
 import aiohttp
 
 import sys
@@ -146,41 +146,14 @@ async def update_broadcast_status(
     completed: Optional[bool] = None
 ):
     """Обновить статус рассылки"""
-    async with aiosqlite.connect(db.db_path) as conn:
-        updates = ["status = ?"]
-        params = [status]
-
-        if sent_count is not None:
-            updates.append("sent_count = ?")
-            params.append(sent_count)
-
-        if failed_count is not None:
-            updates.append("failed_count = ?")
-            params.append(failed_count)
-
-        if started_at is not None:
-            updates.append("started_at = ?")
-            params.append(started_at)
-
-        if completed is not None:
-            updates.append("completed = ?")
-            params.append(completed)
-
-        params.append(broadcast_id)
-
-        query = f"UPDATE broadcasts SET {', '.join(updates)} WHERE id = ?"
-        await conn.execute(query, params)
-        await conn.commit()
+    # Используем универсальный метод базы данных
+    await db.update_broadcast_status(broadcast_id, status)
 
 
 async def update_broadcast_counters(db: UniversalDatabase, broadcast_id: int, sent_count: int, failed_count: int):
     """Обновить счетчики рассылки"""
-    async with aiosqlite.connect(db.db_path) as conn:
-        await conn.execute(
-            "UPDATE broadcasts SET sent_count = ?, failed_count = ? WHERE id = ?",
-            (sent_count, failed_count, broadcast_id)
-        )
-        await conn.commit()
+    # Используем универсальный метод базы данных
+    await db.update_broadcast_stats(broadcast_id, sent_count=sent_count, failed_count=failed_count)
 
 
 @router.post("/")

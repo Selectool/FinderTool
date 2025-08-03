@@ -181,7 +181,9 @@ block extra_head %}
 								{% endif %}
 								<small class="text-muted">
 									{% set msg_text = broadcast.message_text if
-									broadcast.message_text else broadcast['message_text'] %} {{
+									broadcast.message_text else (broadcast['message_text'] if
+									broadcast.get('message_text') else (broadcast.message if
+									broadcast.message else broadcast['message'])) %} {{
 									msg_text[:100] if msg_text else 'Нет текста' }}{% if msg_text
 									and msg_text|length > 100 %}...{% endif %}
 								</small>
