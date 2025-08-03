@@ -261,6 +261,13 @@ async def callback_broadcast_create(callback: CallbackQuery, state: FSMContext, 
 💎 <b>Подписчики</b> - {subscribers_count} чел.
 Пользователи с активной подпиской
 
+📎 <b>Поддерживаемые типы сообщений:</b>
+• 📝 Текстовые сообщения
+• 🖼️ Изображения (с подписью)
+• 📄 Документы (с подписью)
+• 🎥 Видео (с подписью)
+• 🎵 Аудио (с подписью)
+
 Выберите целевую аудиторию для рассылки:"""
 
     keyboard = InlineKeyboardBuilder()
@@ -316,12 +323,14 @@ async def callback_create_audience(callback: CallbackQuery, state: FSMContext, d
 📝 <b>Теперь отправьте сообщение для рассылки</b>
 
 💡 <b>Поддерживается:</b>
-• HTML разметка (<b>жирный</b>, <i>курсив</i>)
-• Эмодзи 😊
-• Ссылки
-• Переносы строк
+• 📝 Текстовые сообщения с HTML разметкой
+• 🖼️ Изображения (с подписью)
+• 📄 Документы (с подписью)
+• 🎥 Видео (с подписью)
+• 🎵 Аудио (с подписью)
+• Эмодзи 😊, ссылки, переносы строк
 
-Отправьте текст сообщения:"""
+Отправьте текст или медиафайл:"""
 
     keyboard = InlineKeyboardBuilder()
     keyboard.row(
@@ -338,7 +347,117 @@ async def callback_create_audience(callback: CallbackQuery, state: FSMContext, d
     await callback.answer()
 
 
-# Обработчик сообщения для рассылки
+# Обработчик медиафайлов для рассылки
+@router.message(F.content_type.in_({'photo', 'document', 'video', 'audio'}), StateFilter("waiting_broadcast_message"))
+async def handle_broadcast_media(message: Message, state: FSMContext, db: UniversalDatabase):
+    """Обработка медиафайлов для рассылки"""
+    if not await is_admin(message.from_user.id, db):
+        await message.answer("❌ У вас нет прав администратора")
+        await state.clear()
+        return
+
+    # Получаем данные из состояния
+    data = await state.get_data()
+    audience_type = data.get('audience_type', 'all')
+
+    # Определяем тип медиафайла и получаем file_id
+    media_info = None
+    caption_text = message.caption or ""
+
+    if message.photo:
+        # Берем фото наибольшего размера
+        photo = message.photo[-1]
+        media_info = {
+            'type': 'photo',
+            'file_id': photo.file_id,
+            'file_unique_id': photo.file_unique_id,
+            'caption': caption_text
+        }
+    elif message.document:
+        media_info = {
+            'type': 'document',
+            'file_id': message.document.file_id,
+            'file_unique_id': message.document.file_unique_id,
+            'file_name': message.document.file_name,
+            'mime_type': message.document.mime_type,
+            'caption': caption_text
+        }
+    elif message.video:
+        media_info = {
+            'type': 'video',
+            'file_id': message.video.file_id,
+            'file_unique_id': message.video.file_unique_id,
+            'duration': message.video.duration,
+            'caption': caption_text
+        }
+    elif message.audio:
+        media_info = {
+            'type': 'audio',
+            'file_id': message.audio.file_id,
+            'file_unique_id': message.audio.file_unique_id,
+            'duration': message.audio.duration,
+            'caption': caption_text
+        }
+
+    if not media_info:
+        await message.answer("❌ Неподдерживаемый тип медиафайла")
+        return
+
+    # Сохраняем медиаинформацию в состояние
+    await state.update_data(
+        media_info=media_info,
+        broadcast_message=caption_text
+    )
+
+    # Получаем количество получателей
+    if audience_type == "all":
+        target_count = await db.get_users_count()
+        audience_name = "всем пользователям"
+    elif audience_type == "active":
+        target_count = await db.get_active_users_count()
+        audience_name = "активным пользователям"
+    elif audience_type == "subscribers":
+        target_count = await db.get_subscribers_count()
+        audience_name = "подписчикам"
+    else:
+        target_count = await db.get_users_count()
+        audience_name = "всем пользователям"
+
+    # Предварительный просмотр медиарассылки
+    media_type_names = {
+        'photo': '🖼️ Изображение',
+        'document': '📄 Документ',
+        'video': '🎥 Видео',
+        'audio': '🎵 Аудио'
+    }
+
+    preview_text = f"""📢 <b>Предварительный просмотр медиарассылки</b>
+
+🎯 <b>Аудитория:</b> {audience_name} ({target_count} чел.)
+
+📎 <b>Медиафайл:</b> {media_type_names.get(media_info['type'], 'Файл')}"""
+
+    if media_info.get('file_name'):
+        preview_text += f"\n📝 <b>Имя файла:</b> {media_info['file_name']}"
+
+    if caption_text:
+        preview_text += f"\n\n💬 <b>Подпись:</b>\n{caption_text}"
+
+    preview_text += "\n\n───────────────────\n\n✅ Подтвердите отправку рассылки:"
+
+    await message.answer(
+        preview_text,
+        parse_mode="HTML",
+        reply_markup=get_broadcast_confirm_keyboard()
+    )
+
+    # Переходим к состоянию подтверждения
+    await state.set_state("confirming_broadcast")
+
+    logger.info(f"Админ {message.from_user.id} подготовил медиарассылку для аудитории {audience_type}")
+
+
+# Обработчик текстового сообщения для рассылки
 @router.message(F.text, StateFilter("waiting_broadcast_message"))
 async def handle_broadcast_message(message: Message, state: FSMContext, db: UniversalDatabase):
     """Обработка сообщения для рассылки"""
@@ -404,7 +523,7 @@ async def handle_broadcast_message(message: Message, state: FSMContext, db: Univ
 
 @router.callback_query(F.data == "confirm_send_now", StateFilter("confirming_broadcast"))
 async def callback_confirm_send_now(callback: CallbackQuery, state: FSMContext, db: UniversalDatabase):
-    """Подтверждение отправки рассылки"""
+    """Подтверждение отправки рассылки (текстовой или медиа)"""
     if not await is_admin(callback.from_user.id, db):
         await callback.answer("❌ Нет прав доступа")
         await state.clear()
@@ -412,18 +531,23 @@ async def callback_confirm_send_now(callback: CallbackQuery, state: FSMContext, 
 
     # Получаем данные из состояния
     data = await state.get_data()
-    broadcast_message = data.get('broadcast_message')
+    broadcast_message = data.get('broadcast_message', '')
     audience_type = data.get('audience_type', 'all')
+    media_info = data.get('media_info')  # Информация о медиафайле
 
-    if not broadcast_message:
+    # Определяем тип рассылки
+    is_media_broadcast = media_info is not None
+
+    if not broadcast_message and not is_media_broadcast:
         await callback.answer("❌ Сообщение не найдено", show_alert=True)
         await state.clear()
         return
 
     try:
         # Создаем рассылку в базе данных
+        broadcast_title = f"{'Медиа' if is_media_broadcast else 'Текстовая'} рассылка {audience_type}"
         broadcast_id = await db.create_broadcast(
-            title=f"Рассылка {audience_type}",
+            title=broadcast_title,
             message_text=broadcast_message,
             parse_mode="HTML",
             target_users=audience_type,
@@ -431,11 +555,24 @@ async def callback_confirm_send_now(callback: CallbackQuery, state: FSMContext, 
             scheduled_time=None  # Отправляем сейчас
         )
 
+        # Формируем сообщение об успехе
+        success_message = f"📤 <b>{'Медиа' if is_media_broadcast else 'Текстовая'} рассылка создана и запущена!</b>\n\n"
+        success_message += f"🆔 ID рассылки: {broadcast_id}\n"
+
+        if is_media_broadcast:
+            media_type_names = {
+                'photo': '🖼️ Изображение',
+                'document': '📄 Документ',
+                'video': '🎥 Видео',
+                'audio': '🎵 Аудио'
+            }
+            success_message += f"📎 Тип медиа: {media_type_names.get(media_info['type'], 'Файл')}\n"
+
+        success_message += "📊 Отправка началась в фоновом режиме\n\n"
+        success_message += "Вы можете отслеживать прогресс в разделе 'Список рассылок'"
+
         await callback.message.edit_text(
-            "📤 <b>Рассылка создана и запущена!</b>\n\n"
-            f"🆔 ID рассылки: {broadcast_id}\n"
-            "📊 Отправка началась в фоновом режиме\n\n"
-            "Вы можете отслеживать прогресс в разделе 'Список рассылок'",
+            success_message,
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(text="📊 Посмотреть статистику", callback_data=f"broadcast_detail:{broadcast_id}"),
@@ -447,7 +584,12 @@ async def callback_confirm_send_now(callback: CallbackQuery, state: FSMContext, 
 
         # Запускаем фоновую отправку
         import asyncio
-        task = asyncio.create_task(send_broadcast_task(db, broadcast_id, callback.bot))
+        if is_media_broadcast:
+            # Для медиарассылки используем специальную функцию
+            task = asyncio.create_task(send_media_broadcast_task(db, broadcast_id, callback.bot, media_info))
+        else:
+            # Для текстовой рассылки используем обычную функцию
+            task = asyncio.create_task(send_broadcast_task(db, broadcast_id, callback.bot))
 
         # Добавляем обработчик ошибок для фоновой задачи
         def task_done_callback(task):
@@ -465,6 +607,95 @@ async def callback_confirm_send_now(callback: CallbackQuery, state: FSMContext, 
         logger.error(f"Ошибка создания рассылки: {e}")
         await callback.answer("❌ Ошибка создания рассылки", show_alert=True)
         await state.clear()
+
+
+async def send_media_broadcast_task(db: UniversalDatabase, broadcast_id: int, bot, media_info: dict):
+    """Фоновая задача отправки медиарассылки через Telegram Bot API"""
+    logger.info(f"Начинаем отправку медиарассылки {broadcast_id}")
+
+    try:
+        # Получаем информацию о рассылке
+        broadcast = await db.get_broadcast_by_id(broadcast_id)
+        if not broadcast:
+            logger.error(f"Рассылка {broadcast_id} не найдена")
+            return
+
+        # Получаем список пользователей
+        target_users = broadcast.get('target_users', 'all')
+        if target_users == "all":
+            users = await db.get_all_users_for_broadcast()
+        elif target_users == "active":
+            users = await db.get_active_users_for_broadcast(days=30)
+        elif target_users == "subscribers":
+            users = await db.get_subscribed_users()
+        else:
+            users = await db.get_all_users_for_broadcast()
+
+        if not users:
+            logger.warning(f"Нет пользователей для рассылки {broadcast_id}")
+            return
+
+        # Обновляем статус рассылки
+        await db.update_broadcast_status(broadcast_id, "sending")
+
+        sent_count = 0
+        failed_count = 0
+
+        # Отправляем медиафайл каждому пользователю
+        for user in users:
+            try:
+                user_id = user['user_id']
+
+                # Отправляем медиафайл в зависимости от типа
+                if media_info['type'] == 'photo':
+                    await bot.send_photo(
+                        chat_id=user_id,
+                        photo=media_info['file_id'],
+                        caption=media_info.get('caption', ''),
+                        parse_mode="HTML"
+                    )
+                elif media_info['type'] == 'document':
+                    await bot.send_document(
+                        chat_id=user_id,
+                        document=media_info['file_id'],
+                        caption=media_info.get('caption', ''),
+                        parse_mode="HTML"
+                    )
+                elif media_info['type'] == 'video':
+                    await bot.send_video(
+                        chat_id=user_id,
+                        video=media_info['file_id'],
+                        caption=media_info.get('caption', ''),
+                        parse_mode="HTML"
+                    )
+                elif media_info['type'] == 'audio':
+                    await bot.send_audio(
+                        chat_id=user_id,
+                        audio=media_info['file_id'],
+                        caption=media_info.get('caption', ''),
+                        parse_mode="HTML"
+                    )
+
+                sent_count += 1
+                logger.debug(f"Медиафайл отправлен пользователю {user_id}")
+
+                # Небольшая задержка между отправками
+                await asyncio.sleep(0.1)
+
+            except Exception as e:
+                failed_count += 1
+                logger.warning(f"Ошибка отправки медиафайла пользователю {user_id}: {e}")
+                continue
+
+        # Обновляем статистику рассылки
+        await db.update_broadcast_stats(broadcast_id, sent_count=sent_count, failed_count=failed_count)
+        await db.update_broadcast_status(broadcast_id, "completed")
+
+        logger.info(f"Медиарассылка {broadcast_id} завершена. Отправлено: {sent_count}, ошибок: {failed_count}")
+
+    except Exception as e:
+        logger.error(f"Критическая ошибка в медиарассылке {broadcast_id}: {e}")
+        await db.update_broadcast_status(broadcast_id, "failed")
 
 
 async def send_broadcast_task(db: UniversalDatabase, broadcast_id: int, bot):

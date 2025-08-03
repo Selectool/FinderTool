@@ -64,7 +64,9 @@ class MediaBroadcastResponse(BaseModel):
     success: bool
     broadcast_id: Optional[int] = None
     message: str
+    target_count: Optional[int] = None  # Количество получателей
     media_info: Optional[Dict[str, Any]] = None
+    scheduled: bool = False  # Запланированная или отправлена сейчас
 
 def get_file_type(filename: str) -> Optional[str]:
     """Определить тип файла по расширению"""
@@ -316,16 +318,31 @@ async def create_media_broadcast(
         else:
             # Если нет медиафайла, используем обычную текстовую рассылку
             from admin.api.broadcasts import send_broadcast_messages
+            user_ids = [user['user_id'] for user in users]
             background_tasks.add_task(
                 send_broadcast_messages,
-                db, broadcast_id, users, message_text or ""
+                db, broadcast_id, user_ids, message_text or "", 30, True, "HTML"
             )
         
+        # Формируем сообщение в зависимости от типа рассылки
+        if media_info:
+            message_type = "Медиарассылка"
+            file_type = media_info.get('type', 'файл')
+        else:
+            message_type = "Текстовая рассылка"
+            file_type = None
+
+        success_message = f"{message_type} создана и запущена! ID: {broadcast_id}"
+        if file_type:
+            success_message += f" (тип: {file_type})"
+
         return MediaBroadcastResponse(
             success=True,
             broadcast_id=broadcast_id,
-            message=f"Медиарассылка создана и запущена! ID: {broadcast_id}",
-            media_info=media_info
+            message=success_message,
+            target_count=len(users),
+            media_info=media_info,
+            scheduled=False
         )
         
     except Exception as e:
