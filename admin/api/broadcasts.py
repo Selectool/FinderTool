@@ -36,8 +36,10 @@ add_get_user_permissions_method()
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Токен бота
-BOT_TOKEN = "8066350716:AAHEDXC0kL_L-TXui8vxI0HhD0wchIzl1hI"
+# Токен бота - получаем из конфигурации
+from config import get_config
+config = get_config()
+BOT_TOKEN = config.TELEGRAM_BOT_TOKEN
 
 class BroadcastCreateRequest(BaseModel):
     title: str
