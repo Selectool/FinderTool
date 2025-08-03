@@ -34,8 +34,21 @@ class ProductionDatabaseManager:
         """Извлечь значение COUNT из результата PostgreSQL"""
         if not result:
             return 0
-        # PostgreSQL возвращает Record объект, берем первое значение
-        return int(result[0]) if result else 0
+        try:
+            # PostgreSQL возвращает Record объект
+            if hasattr(result, '__getitem__'):
+                # Если это Record или tuple-like объект
+                return int(result[0])
+            elif hasattr(result, 'values'):
+                # Если это Record с методом values()
+                values = list(result.values())
+                return int(values[0]) if values else 0
+            else:
+                # Если это уже число
+                return int(result)
+        except (KeyError, IndexError, TypeError, ValueError):
+            # Если не удалось извлечь, возвращаем 0
+            return 0
 
     def _get_database_url(self) -> str:
         """Получить URL базы данных из переменных окружения"""
