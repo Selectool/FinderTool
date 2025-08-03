@@ -7,7 +7,7 @@ import logging
 from typing import Callable, Dict, Any, Awaitable, Optional
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, User
-from database.models import Database
+from database.universal_database import UniversalDatabase
 
 logger = logging.getLogger(__name__)
 

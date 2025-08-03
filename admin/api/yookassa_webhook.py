@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
 
-from database.models import Database
+from database.universal_database import UniversalDatabase
 from services.yookassa_webhook import create_webhook_handler
 from config import YOOKASSA_MODE
 
@@ -15,13 +15,13 @@ router = APIRouter()
 
 async def get_database_instance():
     """Dependency для получения экземпляра базы данных"""
-    db = Database()
+    db = UniversalDatabase()
     await db.init_db()
     return db
 
 
 @router.post("/yookassa/webhook")
-async def yookassa_webhook(request: Request, db: Database = Depends(get_database_instance)):
+async def yookassa_webhook(request: Request, db: UniversalDatabase = Depends(get_database_instance)):
     """
     Endpoint для обработки webhook уведомлений от ЮKassa
     """
@@ -92,7 +92,7 @@ async def test_webhook_endpoint():
 
 
 @router.post("/yookassa/webhook/test")
-async def test_webhook_processing(request: Request, db: Database = Depends(get_database_instance)):
+async def test_webhook_processing(request: Request, db: UniversalDatabase = Depends(get_database_instance)):
     """
     Тестовый endpoint для проверки обработки webhook уведомлений
     """

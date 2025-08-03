@@ -10,7 +10,6 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import BOT_TOKEN, API_ID, API_HASH, IS_PRODUCTION
-from database.models import Database
 from database.production_manager import init_production_database, db_manager
 from database.db_adapter import set_database
 from bot.middlewares.database import DatabaseMiddleware
@@ -122,10 +121,10 @@ async def main():
     set_database(db_manager.adapter)
     logger.info("Глобальный адаптер базы данных установлен")
 
-    # Инициализация legacy Database для совместимости
-    db = Database()
-    await db.init_db()
-    logger.info("Legacy Database инициализирована для совместимости")
+    # Инициализация универсальной базы данных
+    from database.universal_database import UniversalDatabase
+    db = UniversalDatabase(db_manager.database_url)
+    logger.info("Универсальная база данных инициализирована")
     
     # Production-ready middleware stack
     if IS_PRODUCTION and PRODUCTION_MODULES_AVAILABLE:

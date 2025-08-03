@@ -27,7 +27,7 @@ except ImportError:
         LOG_LEVEL, DATABASE_PATH, UPLOAD_DIR
     )
 
-from database.models import Database
+from database.universal_database import UniversalDatabase
 
 # Импорты для админ-панели
 try:
@@ -68,14 +68,14 @@ async def lifespan(app: FastAPI):
             await db.initialize_database()
         else:
             # Fallback для SQLite
-            from database.models import Database
-            db = Database(DATABASE_PATH)
+            from database.universal_database import UniversalDatabase
+            db = UniversalDatabase(DATABASE_PATH)
             await db.init_db()
     except Exception as e:
         print(f"⚠️ Ошибка инициализации БД: {e}")
         # Последний fallback
-        from database.models import Database
-        db = Database(DATABASE_PATH)
+        from database.universal_database import UniversalDatabase
+        db = UniversalDatabase(DATABASE_PATH)
         await db.init_db()
 
     # Инициализация системы прав доступа для рассылок

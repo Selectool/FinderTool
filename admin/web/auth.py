@@ -235,8 +235,8 @@ async def token_login(token: str = Query(...), request: Request = None):
 
         # Логируем успешный вход для аудита
         try:
-            from database.models import Database
-            db = Database()
+            from database.universal_database import UniversalDatabase
+            db = UniversalDatabase()
             await db.log_admin_action(
                 admin_id=user_id,
                 action="secure_token_login",

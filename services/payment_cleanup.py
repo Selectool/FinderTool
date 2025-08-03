@@ -7,14 +7,14 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
-from database.models import Database
+from database.universal_database import UniversalDatabase
 
 logger = logging.getLogger(__name__)
 
 class PaymentCleanupService:
     """Сервис для очистки просроченных платежей"""
     
-    def __init__(self, db: Database):
+    def __init__(self, db: UniversalDatabase):
         self.db = db
         self.cleanup_interval = 300  # 5 минут
         self.invoice_timeout = 1800  # 30 минут для оплаты инвойса
@@ -239,14 +239,14 @@ class PaymentCleanupService:
 # Глобальный экземпляр сервиса
 _cleanup_service = None
 
-def get_cleanup_service(db: Database) -> PaymentCleanupService:
+def get_cleanup_service(db: UniversalDatabase) -> PaymentCleanupService:
     """Получить экземпляр сервиса очистки"""
     global _cleanup_service
     if _cleanup_service is None:
         _cleanup_service = PaymentCleanupService(db)
     return _cleanup_service
 
-async def start_payment_cleanup(db: Database):
+async def start_payment_cleanup(db: UniversalDatabase):
     """Запуск сервиса очистки платежей"""
     cleanup_service = get_cleanup_service(db)
     await cleanup_service.start_cleanup_scheduler()
