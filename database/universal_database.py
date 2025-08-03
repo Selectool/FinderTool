@@ -165,9 +165,10 @@ class UniversalDatabase:
                 """
                 params = (datetime.now(), user_id)
             else:  # PostgreSQL
+                # В PostgreSQL колонка называется last_activity
                 query = """
-                    UPDATE users 
-                    SET requests_used = requests_used + 1, last_request = $1
+                    UPDATE users
+                    SET requests_used = requests_used + 1, last_activity = $1
                     WHERE user_id = $2
                 """
                 params = (datetime.now(), user_id)
@@ -387,9 +388,10 @@ class UniversalDatabase:
                     WHERE last_request > datetime('now', '-30 days')
                 """
             else:  # PostgreSQL
+                # В PostgreSQL колонка называется last_activity
                 query = """
                     SELECT COUNT(*) FROM users
-                    WHERE last_request > NOW() - INTERVAL '30 days'
+                    WHERE last_activity > NOW() - INTERVAL '30 days'
                 """
 
             result = await self.adapter.fetch_one(query)
@@ -438,9 +440,10 @@ class UniversalDatabase:
                     WHERE last_request > datetime('now', '-{days} days')
                 """
             else:  # PostgreSQL
+                # В PostgreSQL колонка называется last_activity
                 query = f"""
                     SELECT user_id FROM users
-                    WHERE last_request > NOW() - INTERVAL '{days} days'
+                    WHERE last_activity > NOW() - INTERVAL '{days} days'
                 """
 
             results = await self.adapter.fetch_all(query)
@@ -486,3 +489,77 @@ class UniversalDatabase:
             except:
                 pass
             return []
+
+    # ========== МЕТОДЫ ДЛЯ РАССЫЛОК ==========
+
+    async def create_broadcast(self, title: str, message: str, target_users: str = "all",
+                              scheduled_time: datetime = None, created_by: int = None) -> int:
+        """Создать рассылку"""
+        try:
+            await self.adapter.connect()
+
+            if self.adapter.db_type == 'sqlite':
+                query = """
+                    INSERT INTO broadcasts
+                    (title, message, target_users, scheduled_time, created_by, created_at, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'pending')
+                """
+                params = (title, message, target_users, scheduled_time, created_by, datetime.now())
+            else:  # PostgreSQL
+                query = """
+                    INSERT INTO broadcasts
+                    (title, message, target_users, scheduled_time, created_by, created_at, status)
+                    VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+                    RETURNING id
+                """
+                params = (title, message, target_users, scheduled_time, created_by, datetime.now())
+
+            if self.adapter.db_type == 'postgresql':
+                result = await self.adapter.fetch_one(query, params)
+                broadcast_id = result[0] if result else None
+            else:
+                await self.adapter.execute(query, params)
+                # Для SQLite получаем последний ID
+                result = await self.adapter.fetch_one("SELECT last_insert_rowid()")
+                broadcast_id = result[0] if result else None
+
+            await self.adapter.disconnect()
+            return broadcast_id
+
+        except Exception as e:
+            logger.error(f"Ошибка создания рассылки: {e}")
+            try:
+                await self.adapter.disconnect()
+            except:
+                pass
+            return None
+
+    async def update_user_activity(self, user_id: int):
+        """Обновить время последней активности пользователя"""
+        try:
+            await self.adapter.connect()
+
+            if self.adapter.db_type == 'sqlite':
+                query = """
+                    UPDATE users
+                    SET last_request = ?
+                    WHERE user_id = ?
+                """
+                params = (datetime.now(), user_id)
+            else:  # PostgreSQL
+                query = """
+                    UPDATE users
+                    SET last_activity = $1
+                    WHERE user_id = $2
+                """
+                params = (datetime.now(), user_id)
+
+            await self.adapter.execute(query, params)
+            await self.adapter.disconnect()
+
+        except Exception as e:
+            logger.error(f"Ошибка обновления активности для {user_id}: {e}")
+            try:
+                await self.adapter.disconnect()
+            except:
+                pass
