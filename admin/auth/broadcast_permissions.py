@@ -311,6 +311,6 @@ def add_get_user_permissions_method():
             # Если таблица не существует, возвращаем пустой список
             return []
 
-    # Динамически добавляем метод в класс Database
+    # Динамически добавляем метод в класс UniversalDatabase
     from database.universal_database import UniversalDatabase
-    Database.get_user_permissions = get_user_permissions
+    UniversalDatabase.get_user_permissions = get_user_permissions

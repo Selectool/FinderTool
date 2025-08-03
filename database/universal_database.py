@@ -323,7 +323,15 @@ class UniversalDatabase:
             await self.adapter.connect()
             result = await self.adapter.fetch_one("SELECT COUNT(*) FROM users")
             await self.adapter.disconnect()
-            return result[0] if result else 0
+
+            if result:
+                # Обрабатываем разные типы результатов
+                if hasattr(result, '__getitem__'):
+                    return int(result[0])
+                else:
+                    return int(result)
+            return 0
+
         except Exception as e:
             logger.error(f"Ошибка получения количества пользователей: {e}")
             try:
@@ -352,7 +360,14 @@ class UniversalDatabase:
 
             result = await self.adapter.fetch_one(query)
             await self.adapter.disconnect()
-            return result[0] if result else 0
+
+            if result:
+                # Обрабатываем разные типы результатов
+                if hasattr(result, '__getitem__'):
+                    return int(result[0])
+                else:
+                    return int(result)
+            return 0
 
         except Exception as e:
             logger.error(f"Ошибка получения количества подписчиков: {e}")
@@ -492,7 +507,7 @@ class UniversalDatabase:
 
     # ========== МЕТОДЫ ДЛЯ РАССЫЛОК ==========
 
-    async def create_broadcast(self, title: str, message: str, target_users: str = "all",
+    async def create_broadcast(self, title: str, message_text: str, target_users: str = "all",
                               scheduled_time: datetime = None, created_by: int = None) -> int:
         """Создать рассылку"""
         try:
@@ -504,7 +519,7 @@ class UniversalDatabase:
                     (title, message, target_users, scheduled_time, created_by, created_at, status)
                     VALUES (?, ?, ?, ?, ?, ?, 'pending')
                 """
-                params = (title, message, target_users, scheduled_time, created_by, datetime.now())
+                params = (title, message_text, target_users, scheduled_time, created_by, datetime.now())
             else:  # PostgreSQL
                 query = """
                     INSERT INTO broadcasts
@@ -512,7 +527,7 @@ class UniversalDatabase:
                     VALUES ($1, $2, $3, $4, $5, $6, 'pending')
                     RETURNING id
                 """
-                params = (title, message, target_users, scheduled_time, created_by, datetime.now())
+                params = (title, message_text, target_users, scheduled_time, created_by, datetime.now())
 
             if self.adapter.db_type == 'postgresql':
                 result = await self.adapter.fetch_one(query, params)
