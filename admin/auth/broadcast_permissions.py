@@ -276,8 +276,7 @@ async def revoke_permissions_from_user(db: UniversalDatabase, user_id: int, perm
         await db.adapter.connect()
         for permission in permissions:
             if db.adapter.db_type == 'sqlite':
-                query = "DELETE FROM user_permissions
-                WHERE user_id = ? AND permission = ?"
+                query = "DELETE FROM user_permissions WHERE user_id = ? AND permission = ?"
                 params = (user_id, permission)
             else:  # PostgreSQL
                 query = "DELETE FROM user_permissions WHERE user_id = $1 AND permission = $2"
