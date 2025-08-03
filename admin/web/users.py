@@ -29,12 +29,19 @@ async def get_db(request: Request) -> UniversalDatabase:
     return request.state.db
 
 
-def parse_datetime_field(date_str: str) -> datetime:
+def parse_datetime_field(date_str) -> datetime:
     """Преобразовать строку даты в объект datetime"""
     if not date_str:
         return None
 
+    # Если уже datetime объект, возвращаем как есть
+    if isinstance(date_str, datetime):
+        return date_str
+
     try:
+        # Преобразуем в строку если это не строка
+        date_str = str(date_str)
+
         # Пробуем разные форматы
         formats = [
             '%Y-%m-%d %H:%M:%S.%f',  # С микросекундами

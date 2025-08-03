@@ -116,7 +116,7 @@ def get_user_permissions(role: str) -> list:
             "statistics.view", "audit.view"
         ],
         "developer": [
-            "statistics.view", "broadcasts.create", "broadcasts.view",
+            "users.view", "statistics.view", "broadcasts.create", "broadcasts.view",
             "templates.create", "templates.edit", "audit.view", "system.logs"
         ],
         "moderator": [

@@ -7,6 +7,8 @@ from database.db_adapter import DatabaseAdapter
 
 class Migration006:
     """Исправление схемы таблицы broadcasts"""
+
+    description = "Исправление схемы таблицы broadcasts - добавление недостающих колонок и индексов"
     
     async def up(self, adapter: DatabaseAdapter):
         """Применить миграцию"""

@@ -53,15 +53,19 @@ async def lifespan(app: FastAPI):
     # Инициализация при запуске
     logger.info("Запуск админ-панели...")
 
-    # Используем production database manager для админ-панели (только PostgreSQL)
+    # Используем UniversalDatabase для совместимости с ботом
     try:
-        from database.production_manager import ProductionDatabaseManager
+        from database.universal_database import UniversalDatabase
+        from database.production_manager import db_manager
 
-        # Инициализируем PostgreSQL production manager
-        db = ProductionDatabaseManager()
-        await db.initialize_database()
+        # Инициализируем production manager для создания таблиц
+        await db_manager.initialize_database()
+
+        # Создаем UniversalDatabase для админ-панели
+        db = UniversalDatabase(db_manager.database_url)
+
     except Exception as e:
-        print(f"❌ Ошибка инициализации PostgreSQL БД: {e}")
+        print(f"❌ Ошибка инициализации БД: {e}")
         raise
 
     # Инициализация системы прав доступа для рассылок
