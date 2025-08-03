@@ -242,74 +242,120 @@ async def init_broadcast_permissions(db: UniversalDatabase):
 
 async def grant_permissions_to_user(db: UniversalDatabase, user_id: int, permissions: list, granted_by: int = None):
     """Предоставить права пользователю"""
-    import aiosqlite
-    async with aiosqlite.connect(db.db_path) as conn:
+    try:
+        await db.adapter.connect()
         for permission in permissions:
             try:
-                await conn.execute("""
-                    INSERT OR IGNORE INTO user_permissions (user_id, permission, granted_by)
-                    VALUES (?, ?, ?)
-                """, (user_id, permission, granted_by))
+                if db.adapter.db_type == 'sqlite':
+                    query = """
+                        INSERT OR IGNORE INTO user_permissions (user_id, permission, granted_by)
+                        VALUES (?, ?, ?)
+                    """
+                    params = (user_id, permission, granted_by)
+                else:  # PostgreSQL
+                    query = """
+                        INSERT INTO user_permissions (user_id, permission, granted_by)
+                        VALUES ($1, $2, $3)
+                        ON CONFLICT (user_id, permission) DO NOTHING
+                    """
+                    params = (user_id, permission, granted_by)
+
+                await db.adapter.execute(query, params)
             except Exception as e:
                 print(f"Ошибка предоставления права {permission} пользователю {user_id}: {e}")
-
-        await conn.commit()
+    finally:
+        try:
+            await db.adapter.disconnect()
+        except:
+            pass
 
 
 async def revoke_permissions_from_user(db: UniversalDatabase, user_id: int, permissions: list):
     """Отозвать права у пользователя"""
-    import aiosqlite
-    async with aiosqlite.connect(db.db_path) as conn:
+    try:
+        await db.adapter.connect()
         for permission in permissions:
-            await conn.execute("""
-                DELETE FROM user_permissions
-                WHERE user_id = ? AND permission = ?
-            """, (user_id, permission))
+            if db.adapter.db_type == 'sqlite':
+                query = "DELETE FROM user_permissions
+                WHERE user_id = ? AND permission = ?"
+                params = (user_id, permission)
+            else:  # PostgreSQL
+                query = "DELETE FROM user_permissions WHERE user_id = $1 AND permission = $2"
+                params = (user_id, permission)
 
-        await conn.commit()
+            await db.adapter.execute(query, params)
+    finally:
+        try:
+            await db.adapter.disconnect()
+        except:
+            pass
 
 
 async def get_user_permissions(db: UniversalDatabase, user_id: int) -> list:
     """Получить список прав пользователя"""
-    import aiosqlite
-    async with aiosqlite.connect(db.db_path) as conn:
-        cursor = await conn.execute("""
-            SELECT permission FROM user_permissions WHERE user_id = ?
-        """, (user_id,))
+    try:
+        await db.adapter.connect()
 
-        rows = await cursor.fetchall()
-        return [row[0] for row in rows]
+        if db.adapter.db_type == 'sqlite':
+            query = "SELECT permission FROM user_permissions WHERE user_id = ?"
+            params = (user_id,)
+        else:  # PostgreSQL
+            query = "SELECT permission FROM user_permissions WHERE user_id = $1"
+            params = (user_id,)
+
+        rows = await db.adapter.fetch_all(query, params)
+        return [row[0] if hasattr(row, '__getitem__') else row.permission for row in rows]
+    except Exception:
+        return []
+    finally:
+        try:
+            await db.adapter.disconnect()
+        except:
+            pass
 
 
 # Добавляем метод в класс Database
 def add_get_user_permissions_method():
-    """Добавить метод get_user_permissions в класс Database"""
-    import aiosqlite
+    """Добавить метод get_user_permissions в класс UniversalDatabase"""
 
     async def get_user_permissions(self, user_id: int) -> list:
         """Получить список прав пользователя"""
         try:
-            async with aiosqlite.connect(self.db_path) as db:
-                # Проверяем, является ли пользователь админом
-                cursor = await db.execute("""
-                    SELECT role FROM admin_users WHERE id = ?
-                """, (user_id,))
+            await self.adapter.connect()
 
-                row = await cursor.fetchone()
-                if row and row[0] in ['admin', 'super_admin']:
+            # Проверяем, является ли пользователь админом
+            if self.adapter.db_type == 'sqlite':
+                admin_query = "SELECT role FROM admin_users WHERE id = ?"
+                admin_params = (user_id,)
+            else:  # PostgreSQL
+                admin_query = "SELECT role FROM admin_users WHERE id = $1"
+                admin_params = (user_id,)
+
+            admin_result = await self.adapter.fetch_one(admin_query, admin_params)
+            if admin_result:
+                role = admin_result[0] if hasattr(admin_result, '__getitem__') else admin_result.role
+                if role in ['admin', 'super_admin']:
                     # Админы имеют все права
                     return ['broadcast_view', 'broadcast_create', 'broadcast_send', 'broadcast_manage']
 
-                # Пытаемся получить права из таблицы user_permissions
-                cursor = await db.execute("""
-                    SELECT permission FROM user_permissions WHERE user_id = ?
-                """, (user_id,))
+            # Пытаемся получить права из таблицы user_permissions
+            if self.adapter.db_type == 'sqlite':
+                perm_query = "SELECT permission FROM user_permissions WHERE user_id = ?"
+                perm_params = (user_id,)
+            else:  # PostgreSQL
+                perm_query = "SELECT permission FROM user_permissions WHERE user_id = $1"
+                perm_params = (user_id,)
 
-                rows = await cursor.fetchall()
-                return [row[0] for row in rows]
+            rows = await self.adapter.fetch_all(perm_query, perm_params)
+            return [row[0] if hasattr(row, '__getitem__') else row.permission for row in rows]
         except Exception:
             # Если таблица не существует, возвращаем пустой список
             return []
+        finally:
+            try:
+                await self.adapter.disconnect()
+            except:
+                pass
 
     # Динамически добавляем метод в класс UniversalDatabase
     from database.universal_database import UniversalDatabase
