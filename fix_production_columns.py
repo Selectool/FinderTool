@@ -59,8 +59,18 @@ async def check_and_fix_columns():
         column_names = []
         for col in columns:
             if db_type == 'postgresql':
-                column_names.append(col[0])
-                print(f"   - {col[0]} ({col[1]}) {'NULL' if col[2] == 'YES' else 'NOT NULL'}")
+                # col может быть dict или tuple, проверяем
+                if isinstance(col, dict):
+                    column_name = col['column_name']
+                    data_type = col['data_type']
+                    is_nullable = col['is_nullable']
+                else:
+                    column_name = col[0]
+                    data_type = col[1]
+                    is_nullable = col[2]
+
+                column_names.append(column_name)
+                print(f"   - {column_name} ({data_type}) {'NULL' if is_nullable == 'YES' else 'NOT NULL'}")
             else:
                 column_names.append(col[1])
                 print(f"   - {col[1]} ({col[2]}) {'NULL' if col[3] == 0 else 'NOT NULL'}")
