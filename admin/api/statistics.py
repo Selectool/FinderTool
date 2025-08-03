@@ -11,7 +11,7 @@ from database.universal_database import UniversalDatabase
 router = APIRouter()
 
 
-async def get_db(request: Request) -> Database:
+async def get_db(request: Request) -> UniversalDatabase:
     """Получить объект базы данных"""
     return request.state.db
 

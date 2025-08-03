@@ -84,7 +84,7 @@ class BroadcastPermissions:
 
 
 # Dependency функции для FastAPI
-async def get_db() -> Database:
+async def get_db() -> UniversalDatabase:
     """Получить объект базы данных"""
     return UniversalDatabase()
 

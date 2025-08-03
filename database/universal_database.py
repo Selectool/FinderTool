@@ -23,6 +23,12 @@ class UniversalDatabase:
         
         # Для совместимости с существующим кодом
         self.db_path = "bot.db"  # Legacy поддержка
+
+    async def init_db(self):
+        """Инициализация базы данных (для совместимости)"""
+        # Этот метод нужен для совместимости с админ-панелью
+        # В production используется ProductionDatabaseManager
+        pass
         
     async def get_user(self, user_id: int) -> Optional[dict]:
         """Получить пользователя"""
@@ -574,6 +580,130 @@ class UniversalDatabase:
 
         except Exception as e:
             logger.error(f"Ошибка обновления активности для {user_id}: {e}")
+            try:
+                await self.adapter.disconnect()
+            except:
+                pass
+
+    async def get_broadcasts_paginated(self, page: int = 1, per_page: int = 10) -> dict:
+        """Получить рассылки с пагинацией"""
+        try:
+            await self.adapter.connect()
+
+            offset = (page - 1) * per_page
+
+            # Получаем общее количество
+            count_result = await self.adapter.fetch_one("SELECT COUNT(*) FROM broadcasts")
+            total = 0
+            if count_result:
+                if hasattr(count_result, '__getitem__'):
+                    total = int(count_result[0])
+                else:
+                    total = int(count_result)
+
+            # Получаем рассылки
+            if self.adapter.db_type == 'sqlite':
+                query = """
+                    SELECT * FROM broadcasts
+                    ORDER BY created_at DESC
+                    LIMIT ? OFFSET ?
+                """
+                params = (per_page, offset)
+            else:  # PostgreSQL
+                query = """
+                    SELECT * FROM broadcasts
+                    ORDER BY created_at DESC
+                    LIMIT $1 OFFSET $2
+                """
+                params = (per_page, offset)
+
+            results = await self.adapter.fetch_all(query, params)
+            broadcasts = []
+
+            if results:
+                for row in results:
+                    if hasattr(row, '_asdict'):
+                        broadcasts.append(row._asdict())
+                    elif hasattr(row, 'keys'):
+                        broadcasts.append(dict(row))
+                    else:
+                        # Fallback для tuple
+                        broadcasts.append({
+                            'id': row[0],
+                            'title': row[1],
+                            'message': row[2],
+                            'status': row[3],
+                            'created_at': row[4]
+                        })
+
+            await self.adapter.disconnect()
+
+            return {
+                'broadcasts': broadcasts,
+                'total': total,
+                'page': page,
+                'per_page': per_page,
+                'pages': (total + per_page - 1) // per_page if total > 0 else 1
+            }
+
+        except Exception as e:
+            logger.error(f"Ошибка получения рассылок: {e}")
+            try:
+                await self.adapter.disconnect()
+            except:
+                pass
+            return {
+                'broadcasts': [],
+                'total': 0,
+                'page': page,
+                'per_page': per_page,
+                'pages': 1
+            }
+
+    # ========== МЕТОДЫ ДЛЯ АДМИН-ПАНЕЛИ ==========
+
+    async def get_admin_user_by_username(self, username: str) -> Optional[dict]:
+        """Получить админ пользователя по username"""
+        try:
+            await self.adapter.connect()
+
+            if self.adapter.db_type == 'sqlite':
+                query = "SELECT * FROM admin_users WHERE username = ? AND is_active = TRUE"
+                params = (username,)
+            else:  # PostgreSQL
+                query = "SELECT * FROM admin_users WHERE username = $1 AND is_active = TRUE"
+                params = (username,)
+
+            result = await self.adapter.fetch_one(query, params)
+            await self.adapter.disconnect()
+
+            return dict(result) if result else None
+
+        except Exception as e:
+            logger.error(f"Ошибка получения админ пользователя {username}: {e}")
+            try:
+                await self.adapter.disconnect()
+            except:
+                pass
+            return None
+
+    async def update_admin_user_login(self, user_id: int):
+        """Обновить время последнего входа админ пользователя"""
+        try:
+            await self.adapter.connect()
+
+            if self.adapter.db_type == 'sqlite':
+                query = "UPDATE admin_users SET last_login = ? WHERE id = ?"
+                params = (datetime.now(), user_id)
+            else:  # PostgreSQL
+                query = "UPDATE admin_users SET last_login = $1 WHERE id = $2"
+                params = (datetime.now(), user_id)
+
+            await self.adapter.execute(query, params)
+            await self.adapter.disconnect()
+
+        except Exception as e:
+            logger.error(f"Ошибка обновления входа админ пользователя {user_id}: {e}")
             try:
                 await self.adapter.disconnect()
             except:
