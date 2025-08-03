@@ -28,8 +28,15 @@ class UniversalDatabase:
         if not result:
             return 0
         try:
-            # PostgreSQL возвращает Record объект
-            if hasattr(result, '__getitem__'):
+            # PostgreSQL через DatabaseAdapter возвращает dict
+            if isinstance(result, dict):
+                # Ищем ключ count или первое значение
+                if 'count' in result:
+                    return int(result['count'])
+                elif len(result) > 0:
+                    # Берем первое значение
+                    return int(list(result.values())[0])
+            elif hasattr(result, '__getitem__'):
                 # Если это Record или tuple-like объект
                 return int(result[0])
             elif hasattr(result, 'values'):
@@ -39,8 +46,9 @@ class UniversalDatabase:
             else:
                 # Если это уже число
                 return int(result)
-        except (KeyError, IndexError, TypeError, ValueError):
-            # Если не удалось извлечь, возвращаем 0
+        except (KeyError, IndexError, TypeError, ValueError) as e:
+            # Логируем для отладки
+            logger.error(f"Ошибка извлечения count из {result} (тип: {type(result)}): {e}")
             return 0
 
     async def init_db(self):
@@ -385,13 +393,7 @@ class UniversalDatabase:
             result = await self.adapter.fetch_one(query)
             await self.adapter.disconnect()
 
-            if result:
-                # Обрабатываем разные типы результатов
-                if hasattr(result, '__getitem__'):
-                    return int(result[0])
-                else:
-                    return int(result)
-            return 0
+            return self._extract_count(result)
 
         except Exception as e:
             logger.error(f"Ошибка получения количества подписчиков: {e}")
@@ -614,12 +616,7 @@ class UniversalDatabase:
 
             # Получаем общее количество
             count_result = await self.adapter.fetch_one("SELECT COUNT(*) FROM broadcasts")
-            total = 0
-            if count_result:
-                if hasattr(count_result, '__getitem__'):
-                    total = int(self._extract_count(count_result))
-                else:
-                    total = int(count_result)
+            total = self._extract_count(count_result)
 
             # Получаем рассылки
             if self.adapter.db_type == 'sqlite':
