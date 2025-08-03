@@ -460,7 +460,20 @@ class UniversalDatabase:
             results = await self.adapter.fetch_all(query)
             await self.adapter.disconnect()
 
-            return [{'user_id': row[0]} for row in results] if results else []
+            if results:
+                user_list = []
+                for row in results:
+                    if isinstance(row, dict):
+                        user_id = row.get('user_id')
+                    elif hasattr(row, '__getitem__'):
+                        user_id = row[0]
+                    else:
+                        user_id = getattr(row, 'user_id', None)
+
+                    if user_id:
+                        user_list.append({'user_id': user_id})
+                return user_list
+            return []
 
         except Exception as e:
             logger.error(f"Ошибка получения пользователей для рассылки: {e}")
@@ -490,7 +503,20 @@ class UniversalDatabase:
             results = await self.adapter.fetch_all(query)
             await self.adapter.disconnect()
 
-            return [{'user_id': row[0]} for row in results] if results else []
+            if results:
+                user_list = []
+                for row in results:
+                    if isinstance(row, dict):
+                        user_id = row.get('user_id')
+                    elif hasattr(row, '__getitem__'):
+                        user_id = row[0]
+                    else:
+                        user_id = getattr(row, 'user_id', None)
+
+                    if user_id:
+                        user_list.append({'user_id': user_id})
+                return user_list
+            return []
 
         except Exception as e:
             logger.error(f"Ошибка получения активных пользователей для рассылки: {e}")
@@ -521,7 +547,20 @@ class UniversalDatabase:
             results = await self.adapter.fetch_all(query)
             await self.adapter.disconnect()
 
-            return [{'user_id': row[0]} for row in results] if results else []
+            if results:
+                user_list = []
+                for row in results:
+                    if isinstance(row, dict):
+                        user_id = row.get('user_id')
+                    elif hasattr(row, '__getitem__'):
+                        user_id = row[0]
+                    else:
+                        user_id = getattr(row, 'user_id', None)
+
+                    if user_id:
+                        user_list.append({'user_id': user_id})
+                return user_list
+            return []
 
         except Exception as e:
             logger.error(f"Ошибка получения подписчиков для рассылки: {e}")
