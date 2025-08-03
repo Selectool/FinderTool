@@ -36,10 +36,9 @@ add_get_user_permissions_method()
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Токен бота - получаем из конфигурации
-from config import get_config
-config = get_config()
-BOT_TOKEN = config.TELEGRAM_BOT_TOKEN
+# Токен бота - получаем из переменных окружения
+import os
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8066350716:AAHEDXC0kL_L-TXui8vxI0HhD0wchIzl1hI")
 
 class BroadcastCreateRequest(BaseModel):
     title: str
