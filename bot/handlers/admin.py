@@ -428,7 +428,7 @@ async def callback_confirm_send_now(callback: CallbackQuery, state: FSMContext, 
             parse_mode="HTML",
             target_users=audience_type,
             created_by=callback.from_user.id,
-            scheduled_at=None  # Отправляем сейчас
+            scheduled_time=None  # Отправляем сейчас
         )
 
         await callback.message.edit_text(

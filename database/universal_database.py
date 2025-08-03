@@ -23,6 +23,26 @@ class UniversalDatabase:
             raise ValueError("DATABASE_URL обязательна! Укажите PostgreSQL URL в переменных окружения.")
         self.adapter = DatabaseAdapter(self.database_url)
 
+    def _extract_count(self, result) -> int:
+        """Извлечь значение COUNT из результата PostgreSQL"""
+        if not result:
+            return 0
+        try:
+            # PostgreSQL возвращает Record объект
+            if hasattr(result, '__getitem__'):
+                # Если это Record или tuple-like объект
+                return int(result[0])
+            elif hasattr(result, 'values'):
+                # Если это Record с методом values()
+                values = list(result.values())
+                return int(values[0]) if values else 0
+            else:
+                # Если это уже число
+                return int(result)
+        except (KeyError, IndexError, TypeError, ValueError):
+            # Если не удалось извлечь, возвращаем 0
+            return 0
+
     async def init_db(self):
         """Инициализация базы данных (для совместимости)"""
         # Этот метод нужен для совместимости с админ-панелью
@@ -259,7 +279,7 @@ class UniversalDatabase:
             
             # Общее количество пользователей
             total_users_result = await self.adapter.fetch_one("SELECT COUNT(*) FROM users")
-            stats['total_users'] = total_users_result[0] if total_users_result else 0
+            stats['total_users'] = self._extract_count(total_users_result)
             
             # Активные подписчики
             if self.adapter.db_type == 'sqlite':
@@ -276,7 +296,7 @@ class UniversalDatabase:
                 """
             
             active_subs_result = await self.adapter.fetch_one(active_subs_query)
-            stats['active_subscribers'] = active_subs_result[0] if active_subs_result else 0
+            stats['active_subscribers'] = self._extract_count(active_subs_result)
             
             # Запросы за сегодня
             if self.adapter.db_type == 'sqlite':
@@ -291,7 +311,7 @@ class UniversalDatabase:
                 """
             
             requests_today_result = await self.adapter.fetch_one(requests_today_query)
-            stats['requests_today'] = requests_today_result[0] if requests_today_result else 0
+            stats['requests_today'] = self._extract_count(requests_today_result)
             
             await self.adapter.disconnect()
             return stats
@@ -330,13 +350,7 @@ class UniversalDatabase:
             await self.adapter.disconnect()
 
             if result is not None:
-                # Обрабатываем разные типы результатов
-                if hasattr(result, '__getitem__') and len(result) > 0:
-                    count = result[0]
-                elif hasattr(result, 'count'):
-                    count = result.count
-                else:
-                    count = result
+                count = self._extract_count(result)
 
                 # Преобразуем в int
                 return int(count) if count is not None else 0
@@ -393,7 +407,7 @@ class UniversalDatabase:
             await self.adapter.connect()
             result = await self.adapter.fetch_one("SELECT COUNT(*) FROM requests")
             await self.adapter.disconnect()
-            return result[0] if result else 0
+            return self._extract_count(result)
         except Exception as e:
             logger.error(f"Ошибка получения количества запросов: {e}")
             try:
@@ -421,7 +435,7 @@ class UniversalDatabase:
 
             result = await self.adapter.fetch_one(query)
             await self.adapter.disconnect()
-            return result[0] if result else 0
+            return self._extract_count(result)
 
         except Exception as e:
             logger.error(f"Ошибка получения количества активных пользователей: {e}")
@@ -603,7 +617,7 @@ class UniversalDatabase:
             total = 0
             if count_result:
                 if hasattr(count_result, '__getitem__'):
-                    total = int(count_result[0])
+                    total = int(self._extract_count(count_result))
                 else:
                     total = int(count_result)
 
@@ -952,7 +966,7 @@ class UniversalDatabase:
                 query_params = params + [per_page, offset]
             
             count_result = await self.adapter.fetch_one(count_query, params)
-            total = count_result[0] if count_result else 0
+            total = self._extract_count(count_result)
             
             results = await self.adapter.fetch_all(query, query_params)
             users = [dict(row) for row in results] if results else []
@@ -1373,7 +1387,7 @@ class UniversalDatabase:
                 query_params = params + [per_page, offset]
 
             count_result = await self.adapter.fetch_one(count_query, params)
-            total = count_result[0] if count_result else 0
+            total = self._extract_count(count_result)
 
             results = await self.adapter.fetch_all(query, query_params)
             logs = []
@@ -1467,7 +1481,7 @@ class UniversalDatabase:
 
             query = "SELECT COUNT(*) FROM users WHERE blocked = TRUE"
             result = await self.adapter.fetch_one(query, ())
-            return result[0] if result else 0
+            return self._extract_count(result)
 
         except Exception as e:
             logger.error(f"Ошибка получения количества заблокированных: {e}")
@@ -1574,7 +1588,7 @@ class UniversalDatabase:
             # Общее количество рассылок
             total_query = "SELECT COUNT(*) FROM broadcasts"
             total_result = await self.adapter.fetch_one(total_query, ())
-            total = total_result[0] if total_result else 0
+            total = self._extract_count(total_result)
 
             # Количество по статусам
             status_query = "SELECT status, COUNT(*) FROM broadcasts GROUP BY status"
@@ -1698,7 +1712,7 @@ class UniversalDatabase:
                 query_params = params + [per_page, offset]
 
             count_result = await self.adapter.fetch_one(count_query, params)
-            total = count_result[0] if count_result else 0
+            total = self._extract_count(count_result)
 
             results = await self.adapter.fetch_all(query, query_params)
             logs = []
@@ -1993,7 +2007,7 @@ class UniversalDatabase:
                         query = query.replace('?', f'${i+1}', 1)
 
             result = await self.adapter.fetch_one(query, params)
-            return result[0] if result else 0
+            return self._extract_count(result)
 
         except Exception as e:
             logger.error(f"Ошибка получения количества целевой аудитории: {e}")
@@ -2200,34 +2214,34 @@ class UniversalDatabase:
             # Статистика пользователей
             users_total_query = "SELECT COUNT(*) FROM users"
             users_total_result = await self.adapter.fetch_one(users_total_query, ())
-            users_total = users_total_result[0] if users_total_result else 0
+            users_total = self._extract_count(users_total_result)
 
             users_active_query = "SELECT COUNT(*) FROM users WHERE blocked = FALSE AND bot_blocked = FALSE"
             users_active_result = await self.adapter.fetch_one(users_active_query, ())
-            users_active = users_active_result[0] if users_active_result else 0
+            users_active = self._extract_count(users_active_result)
 
             users_subscribed_query = "SELECT COUNT(*) FROM users WHERE is_subscribed = TRUE AND subscription_end > ?"
             users_subscribed_result = await self.adapter.fetch_one(users_subscribed_query, (datetime.now(),))
-            users_subscribed = users_subscribed_result[0] if users_subscribed_result else 0
+            users_subscribed = self._extract_count(users_subscribed_result)
 
             # Статистика запросов
             requests_total_query = "SELECT COUNT(*) FROM requests"
             requests_total_result = await self.adapter.fetch_one(requests_total_query, ())
-            requests_total = requests_total_result[0] if requests_total_result else 0
+            requests_total = self._extract_count(requests_total_result)
 
             # Статистика платежей
             payments_total_query = "SELECT COUNT(*) FROM payments"
             payments_total_result = await self.adapter.fetch_one(payments_total_query, ())
-            payments_total = payments_total_result[0] if payments_total_result else 0
+            payments_total = self._extract_count(payments_total_result)
 
             payments_completed_query = "SELECT COUNT(*) FROM payments WHERE status = 'completed'"
             payments_completed_result = await self.adapter.fetch_one(payments_completed_query, ())
-            payments_completed = payments_completed_result[0] if payments_completed_result else 0
+            payments_completed = self._extract_count(payments_completed_result)
 
             # Статистика рассылок
             broadcasts_total_query = "SELECT COUNT(*) FROM broadcasts"
             broadcasts_total_result = await self.adapter.fetch_one(broadcasts_total_query, ())
-            broadcasts_total = broadcasts_total_result[0] if broadcasts_total_result else 0
+            broadcasts_total = self._extract_count(broadcasts_total_result)
 
             return {
                 'users': {

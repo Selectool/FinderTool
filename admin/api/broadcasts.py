@@ -223,7 +223,7 @@ async def create_broadcast(
             parse_mode=request.parse_mode,
             target_users=request.target_type,
             created_by=1,  # TODO: получать из текущего пользователя
-            scheduled_at=None if request.send_now else request.scheduled_time
+            scheduled_time=None if request.send_now else request.scheduled_time
         )
 
         # Если отправляем сейчас, запускаем фоновую задачу

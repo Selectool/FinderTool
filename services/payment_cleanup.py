@@ -197,7 +197,16 @@ class PaymentCleanupService:
             row = await adapter.fetch_one("""
                 SELECT MIN(created_at) FROM payments WHERE status = 'pending'
             """)
-            oldest_value = row[0] if row and row[0] else None
+            oldest_value = None
+            if row:
+                try:
+                    if hasattr(row, '__getitem__'):
+                        oldest_value = row[0] if row[0] else None
+                    elif hasattr(row, 'values'):
+                        values = list(row.values())
+                        oldest_value = values[0] if values and values[0] else None
+                except (KeyError, IndexError):
+                    oldest_value = None
             if oldest_value:
                 stats['oldest_pending'] = oldest_value
 
