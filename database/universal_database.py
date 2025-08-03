@@ -375,3 +375,114 @@ class UniversalDatabase:
             except:
                 pass
             return 0
+
+    async def get_active_users_count(self) -> int:
+        """Получить количество активных пользователей (за последние 30 дней)"""
+        try:
+            await self.adapter.connect()
+
+            if self.adapter.db_type == 'sqlite':
+                query = """
+                    SELECT COUNT(*) FROM users
+                    WHERE last_request > datetime('now', '-30 days')
+                """
+            else:  # PostgreSQL
+                query = """
+                    SELECT COUNT(*) FROM users
+                    WHERE last_request > NOW() - INTERVAL '30 days'
+                """
+
+            result = await self.adapter.fetch_one(query)
+            await self.adapter.disconnect()
+            return result[0] if result else 0
+
+        except Exception as e:
+            logger.error(f"Ошибка получения количества активных пользователей: {e}")
+            try:
+                await self.adapter.disconnect()
+            except:
+                pass
+            return 0
+
+    async def get_all_users_for_broadcast(self) -> List[dict]:
+        """Получить всех пользователей для рассылки"""
+        try:
+            await self.adapter.connect()
+
+            if self.adapter.db_type == 'sqlite':
+                query = "SELECT user_id FROM users"
+            else:  # PostgreSQL
+                query = "SELECT user_id FROM users"
+
+            results = await self.adapter.fetch_all(query)
+            await self.adapter.disconnect()
+
+            return [{'user_id': row[0]} for row in results] if results else []
+
+        except Exception as e:
+            logger.error(f"Ошибка получения пользователей для рассылки: {e}")
+            try:
+                await self.adapter.disconnect()
+            except:
+                pass
+            return []
+
+    async def get_active_users_for_broadcast(self, days: int = 30) -> List[dict]:
+        """Получить активных пользователей для рассылки"""
+        try:
+            await self.adapter.connect()
+
+            if self.adapter.db_type == 'sqlite':
+                query = f"""
+                    SELECT user_id FROM users
+                    WHERE last_request > datetime('now', '-{days} days')
+                """
+            else:  # PostgreSQL
+                query = f"""
+                    SELECT user_id FROM users
+                    WHERE last_request > NOW() - INTERVAL '{days} days'
+                """
+
+            results = await self.adapter.fetch_all(query)
+            await self.adapter.disconnect()
+
+            return [{'user_id': row[0]} for row in results] if results else []
+
+        except Exception as e:
+            logger.error(f"Ошибка получения активных пользователей для рассылки: {e}")
+            try:
+                await self.adapter.disconnect()
+            except:
+                pass
+            return []
+
+    async def get_subscribed_users(self) -> List[dict]:
+        """Получить всех подписчиков для рассылки"""
+        try:
+            await self.adapter.connect()
+
+            if self.adapter.db_type == 'sqlite':
+                query = """
+                    SELECT user_id FROM users
+                    WHERE is_subscribed = 1
+                    AND (subscription_end IS NULL OR subscription_end > datetime('now'))
+                """
+            else:  # PostgreSQL
+                query = """
+                    SELECT user_id FROM users
+                    WHERE is_subscribed = TRUE
+                    AND (subscription_end IS NULL OR subscription_end > NOW())
+                """
+
+            results = await self.adapter.fetch_all(query)
+            await self.adapter.disconnect()
+
+            return [{'user_id': row[0]} for row in results] if results else []
+
+        except Exception as e:
+            logger.error(f"Ошибка получения подписчиков для рассылки: {e}")
+            try:
+                await self.adapter.disconnect()
+            except:
+                pass
+            return []
