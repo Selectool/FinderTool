@@ -13,12 +13,23 @@ logger = logging.getLogger(__name__)
 
 class PaymentCleanupService:
     """Сервис для очистки просроченных платежей"""
-    
+
     def __init__(self, db: UniversalDatabase):
         self.db = db
         self.cleanup_interval = 300  # 5 минут
         self.invoice_timeout = 1800  # 30 минут для оплаты инвойса
         self.running = False
+
+    def _extract_value(self, result, default=0):
+        """Универсальная функция для извлечения значения из результата запроса"""
+        if not result:
+            return default
+        if hasattr(result, '__getitem__'):
+            return result[0]
+        elif hasattr(result, 'count'):
+            return result.count
+        else:
+            return int(result) if result is not None else default
     
     async def cleanup_expired_invoices(self) -> Dict[str, int]:
         """
@@ -67,7 +78,14 @@ class PaymentCleanupService:
                 # Отменяем просроченные платежи
                 for payment in expired_payments:
                     try:
-                        payment_id, user_id, amount, created_at = payment
+                        # Универсальное извлечение данных из результата
+                        if hasattr(payment, '__getitem__'):
+                            payment_id, user_id, amount, created_at = payment[0], payment[1], payment[2], payment[3]
+                        else:
+                            payment_id = payment.payment_id
+                            user_id = payment.user_id
+                            amount = payment.amount
+                            created_at = payment.created_at
 
                         # Обновляем статус на cancelled
                         if adapter.db_type == 'sqlite':
@@ -174,35 +192,54 @@ class PaymentCleanupService:
             row = await adapter.fetch_one("""
                 SELECT COUNT(*) FROM payments WHERE status = 'pending'
             """)
-            stats['pending_invoices'] = row[0] if row else 0
+            stats['pending_invoices'] = self._extract_value(row, 0)
 
             # Количество просроченных платежей
             row = await adapter.fetch_one("""
                 SELECT COUNT(*) FROM payments WHERE status = 'expired'
             """)
-            stats['expired_invoices'] = row[0] if row else 0
+            stats['expired_invoices'] = self._extract_value(row, 0)
 
             # Самый старый ожидающий платеж
             row = await adapter.fetch_one("""
                 SELECT MIN(created_at) FROM payments WHERE status = 'pending'
             """)
-            if row and row[0]:
-                stats['oldest_pending'] = row[0]
+            oldest_value = self._extract_value(row, None)
+            if oldest_value:
+                stats['oldest_pending'] = oldest_value
 
                 # Проверяем, нужна ли очистка
-                if isinstance(row[0], str):
-                    oldest_time = datetime.fromisoformat(row[0])
-                else:
-                    oldest_time = row[0]
+                try:
+                    if isinstance(oldest_value, str):
+                        oldest_time = datetime.fromisoformat(oldest_value.replace('Z', '+00:00'))
+                    else:
+                        oldest_time = oldest_value
 
-                if datetime.now() - oldest_time > timedelta(seconds=self.invoice_timeout):
-                    stats['cleanup_needed'] = True
+                    # Убираем timezone info для сравнения
+                    if hasattr(oldest_time, 'replace'):
+                        oldest_time = oldest_time.replace(tzinfo=None)
+
+                    if datetime.now() - oldest_time > timedelta(seconds=self.invoice_timeout):
+                        stats['cleanup_needed'] = True
+                except Exception as parse_error:
+                    logger.warning(f"Ошибка парсинга времени {oldest_value}: {parse_error}")
+                    stats['cleanup_needed'] = False
 
         except Exception as e:
+            import traceback
             logger.error(f"❌ Ошибка при получении статистики очистки: {e}")
-            stats = {}
+            logger.error(f"Полная ошибка: {traceback.format_exc()}")
+            stats = {
+                'pending_invoices': 0,
+                'expired_invoices': 0,
+                'oldest_pending': None,
+                'cleanup_needed': False
+            }
         finally:
-            await adapter.disconnect()
+            try:
+                await adapter.disconnect()
+            except:
+                pass
 
         return stats
     

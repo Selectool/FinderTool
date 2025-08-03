@@ -30,6 +30,17 @@ class ProductionDatabaseManager:
         # Метрики
         self.query_stats = {}
 
+    def _extract_value(self, result, default=0):
+        """Универсальная функция для извлечения значения из результата запроса"""
+        if not result:
+            return default
+        if hasattr(result, '__getitem__'):
+            return result[0]
+        elif hasattr(result, 'count'):
+            return result.count
+        else:
+            return int(result) if result is not None else default
+
     def _get_database_url(self) -> str:
         """Получить URL базы данных из переменных окружения"""
         # Приоритет: DATABASE_URL -> локальная SQLite
@@ -490,7 +501,7 @@ class ProductionDatabaseManager:
             # Общее количество
             count_query = f"SELECT COUNT(*) FROM users WHERE {where_clause}"
             total_result = await adapter.fetch_one(count_query, params)
-            total = total_result[0] if total_result else 0
+            total = self._extract_value(total_result, 0)
 
             # Пользователи
             if adapter.db_type == 'sqlite':
@@ -547,7 +558,7 @@ class ProductionDatabaseManager:
             # Общее количество
             count_query = "SELECT COUNT(*) FROM broadcasts"
             total_result = await adapter.fetch_one(count_query)
-            total = total_result[0] if total_result else 0
+            total = self._extract_value(total_result, 0)
 
             # Рассылки с информацией о создателе
             if adapter.db_type == 'sqlite':
@@ -604,7 +615,7 @@ class ProductionDatabaseManager:
             # Общее количество рассылок
             total_query = "SELECT COUNT(*) FROM broadcasts"
             total_result = await adapter.fetch_one(total_query)
-            stats['total'] = total_result[0] if total_result else 0
+            stats['total'] = self._extract_value(total_result, 0)
 
             # Рассылки по статусам
             status_query = """
@@ -613,7 +624,15 @@ class ProductionDatabaseManager:
                 GROUP BY status
             """
             status_results = await adapter.fetch_all(status_query)
-            stats['by_status'] = {row[0]: row[1] for row in status_results} if status_results else {}
+            if status_results:
+                stats['by_status'] = {}
+                for row in status_results:
+                    if hasattr(row, '__getitem__'):
+                        stats['by_status'][row[0]] = row[1]
+                    else:
+                        stats['by_status'][row.status] = row.count
+            else:
+                stats['by_status'] = {}
 
             await adapter.disconnect()
             return stats
@@ -631,7 +650,7 @@ class ProductionDatabaseManager:
 
             # Общее количество пользователей
             total_users_result = await adapter.fetch_one("SELECT COUNT(*) FROM users")
-            stats['total_users'] = total_users_result[0] if total_users_result else 0
+            stats['total_users'] = self._extract_value(total_users_result, 0)
 
             # Активные подписчики
             if adapter.db_type == 'sqlite':
@@ -648,7 +667,7 @@ class ProductionDatabaseManager:
                 """
 
             active_subs_result = await adapter.fetch_one(active_subs_query)
-            stats['active_subscribers'] = active_subs_result[0] if active_subs_result else 0
+            stats['active_subscribers'] = self._extract_value(active_subs_result, 0)
 
             # Запросы за сегодня
             if adapter.db_type == 'sqlite':
@@ -663,7 +682,7 @@ class ProductionDatabaseManager:
                 """
 
             requests_today_result = await adapter.fetch_one(requests_today_query)
-            stats['requests_today'] = requests_today_result[0] if requests_today_result else 0
+            stats['requests_today'] = self._extract_value(requests_today_result, 0)
 
             await adapter.disconnect()
             return stats
@@ -687,11 +706,11 @@ class ProductionDatabaseManager:
             # Статистика пользователей
             users_total_query = "SELECT COUNT(*) FROM users"
             users_total_result = await adapter.fetch_one(users_total_query)
-            users_total = users_total_result[0] if users_total_result else 0
+            users_total = self._extract_value(users_total_result, 0)
 
             users_active_query = "SELECT COUNT(*) FROM users WHERE blocked = FALSE AND bot_blocked = FALSE"
             users_active_result = await adapter.fetch_one(users_active_query)
-            users_active = users_active_result[0] if users_active_result else 0
+            users_active = self._extract_value(users_active_result, 0)
 
             if adapter.db_type == 'sqlite':
                 users_subscribed_query = "SELECT COUNT(*) FROM users WHERE is_subscribed = 1 AND (subscription_end IS NULL OR subscription_end > datetime('now'))"
@@ -699,38 +718,77 @@ class ProductionDatabaseManager:
                 users_subscribed_query = "SELECT COUNT(*) FROM users WHERE is_subscribed = TRUE AND (subscription_end IS NULL OR subscription_end > NOW())"
 
             users_subscribed_result = await adapter.fetch_one(users_subscribed_query)
-            users_subscribed = users_subscribed_result[0] if users_subscribed_result else 0
+            users_subscribed = self._extract_value(users_subscribed_result, 0)
 
             # Статистика запросов
             requests_total_query = "SELECT COUNT(*) FROM requests"
             requests_total_result = await adapter.fetch_one(requests_total_query)
-            requests_total = requests_total_result[0] if requests_total_result else 0
+            requests_total = self._extract_value(requests_total_result, 0)
 
             # Статистика платежей
             payments_total_query = "SELECT COUNT(*) FROM payments"
             payments_total_result = await adapter.fetch_one(payments_total_query)
-            payments_total = payments_total_result[0] if payments_total_result else 0
+            payments_total = self._extract_value(payments_total_result, 0)
 
             payments_completed_query = "SELECT COUNT(*) FROM payments WHERE status = 'completed'"
             payments_completed_result = await adapter.fetch_one(payments_completed_query)
-            payments_completed = payments_completed_result[0] if payments_completed_result else 0
+            payments_completed = self._extract_value(payments_completed_result, 0)
 
             # Статистика рассылок
             broadcasts_total_query = "SELECT COUNT(*) FROM broadcasts"
             broadcasts_total_result = await adapter.fetch_one(broadcasts_total_query)
-            broadcasts_total = broadcasts_total_result[0] if broadcasts_total_result else 0
+            broadcasts_total = self._extract_value(broadcasts_total_result, 0)
 
             await adapter.disconnect()
+
+            # Дополнительная статистика для dashboard
+            # Новые пользователи за периоды
+            if adapter.db_type == 'sqlite':
+                new_today_query = "SELECT COUNT(*) FROM users WHERE DATE(created_at) = DATE('now')"
+                new_week_query = "SELECT COUNT(*) FROM users WHERE created_at >= date('now', '-7 days')"
+                new_month_query = "SELECT COUNT(*) FROM users WHERE created_at >= date('now', '-30 days')"
+                requests_today_query = "SELECT COUNT(*) FROM requests WHERE DATE(created_at) = DATE('now')"
+                requests_week_query = "SELECT COUNT(*) FROM requests WHERE created_at >= date('now', '-7 days')"
+                requests_month_query = "SELECT COUNT(*) FROM requests WHERE created_at >= date('now', '-30 days')"
+            else:  # PostgreSQL
+                new_today_query = "SELECT COUNT(*) FROM users WHERE DATE(created_at) = CURRENT_DATE"
+                new_week_query = "SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'"
+                new_month_query = "SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'"
+                requests_today_query = "SELECT COUNT(*) FROM requests WHERE DATE(created_at) = CURRENT_DATE"
+                requests_week_query = "SELECT COUNT(*) FROM requests WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'"
+                requests_month_query = "SELECT COUNT(*) FROM requests WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'"
+
+            new_today = self._extract_value(await adapter.fetch_one(new_today_query), 0)
+            new_week = self._extract_value(await adapter.fetch_one(new_week_query), 0)
+            new_month = self._extract_value(await adapter.fetch_one(new_month_query), 0)
+            requests_today = self._extract_value(await adapter.fetch_one(requests_today_query), 0)
+            requests_week = self._extract_value(await adapter.fetch_one(requests_week_query), 0)
+            requests_month = self._extract_value(await adapter.fetch_one(requests_month_query), 0)
+
+            # Пользователи с безлимитным доступом
+            unlimited_query = "SELECT COUNT(*) FROM users WHERE unlimited_access = TRUE"
+            unlimited_users = self._extract_value(await adapter.fetch_one(unlimited_query), 0)
 
             return {
                 'users': {
                     'total': users_total,
+                    'total_users': users_total,  # Дублируем для совместимости
                     'active': users_active,
                     'subscribed': users_subscribed,
-                    'blocked': users_total - users_active
+                    'active_subscribers': users_subscribed,  # Дублируем для совместимости
+                    'blocked': users_total - users_active,
+                    'blocked_users': users_total - users_active,  # Дублируем для совместимости
+                    'unlimited_users': unlimited_users,
+                    'new_today': new_today,
+                    'new_week': new_week,
+                    'new_month': new_month
                 },
                 'requests': {
-                    'total': requests_total
+                    'total': requests_total,
+                    'total_requests': requests_total,  # Дублируем для совместимости
+                    'requests_today': requests_today,
+                    'requests_week': requests_week,
+                    'requests_month': requests_month
                 },
                 'payments': {
                     'total': payments_total,
@@ -738,7 +796,11 @@ class ProductionDatabaseManager:
                     'pending': payments_total - payments_completed
                 },
                 'broadcasts': {
-                    'total': broadcasts_total
+                    'total': broadcasts_total,
+                    'total_broadcasts': broadcasts_total,  # Дублируем для совместимости
+                    'completed_broadcasts': 0,  # TODO: добавить подсчет завершенных рассылок
+                    'total_sent': 0,  # TODO: добавить подсчет отправленных сообщений
+                    'total_failed': 0  # TODO: добавить подсчет неудачных отправок
                 }
             }
 
@@ -756,6 +818,235 @@ class ProductionDatabaseManager:
                 'payments': {'total': 0, 'completed': 0, 'pending': 0},
                 'broadcasts': {'total': 0}
             }
+
+    async def get_total_requests_count(self) -> int:
+        """Получить общее количество запросов"""
+        try:
+            adapter = DatabaseAdapter(self.database_url)
+            await adapter.connect()
+
+            result = await adapter.fetch_one("SELECT COUNT(*) FROM requests")
+            count = self._extract_value(result, 0)
+
+            await adapter.disconnect()
+            return count
+        except Exception as e:
+            logger.error(f"Ошибка получения общего количества запросов: {e}")
+            return 0
+
+    async def get_users_count(self) -> int:
+        """Получить общее количество пользователей"""
+        try:
+            adapter = DatabaseAdapter(self.database_url)
+            await adapter.connect()
+
+            result = await adapter.fetch_one("SELECT COUNT(*) FROM users")
+            count = self._extract_value(result, 0)
+
+            await adapter.disconnect()
+            return count
+        except Exception as e:
+            logger.error(f"Ошибка получения количества пользователей: {e}")
+            return 0
+
+    async def get_active_users_count(self) -> int:
+        """Получить количество активных пользователей"""
+        try:
+            adapter = DatabaseAdapter(self.database_url)
+            await adapter.connect()
+
+            query = "SELECT COUNT(*) FROM users WHERE blocked = FALSE AND bot_blocked = FALSE"
+            result = await adapter.fetch_one(query)
+            count = self._extract_value(result, 0)
+
+            await adapter.disconnect()
+            return count
+        except Exception as e:
+            logger.error(f"Ошибка получения количества активных пользователей: {e}")
+            return 0
+
+    async def get_subscribers_count(self) -> int:
+        """Получить количество подписчиков"""
+        try:
+            adapter = DatabaseAdapter(self.database_url)
+            await adapter.connect()
+
+            if adapter.db_type == 'sqlite':
+                query = "SELECT COUNT(*) FROM users WHERE is_subscribed = 1 AND (subscription_end IS NULL OR subscription_end > datetime('now'))"
+            else:  # PostgreSQL
+                query = "SELECT COUNT(*) FROM users WHERE is_subscribed = TRUE AND (subscription_end IS NULL OR subscription_end > NOW())"
+
+            result = await adapter.fetch_one(query)
+            count = self._extract_value(result, 0)
+
+            await adapter.disconnect()
+            return count
+        except Exception as e:
+            logger.error(f"Ошибка получения количества подписчиков: {e}")
+            return 0
+
+    async def get_blocked_users_count(self) -> int:
+        """Получить количество заблокированных пользователей"""
+        try:
+            adapter = DatabaseAdapter(self.database_url)
+            await adapter.connect()
+
+            query = "SELECT COUNT(*) FROM users WHERE blocked = TRUE OR bot_blocked = TRUE"
+            result = await adapter.fetch_one(query)
+            count = self._extract_value(result, 0)
+
+            await adapter.disconnect()
+            return count
+        except Exception as e:
+            logger.error(f"Ошибка получения количества заблокированных пользователей: {e}")
+            return 0
+
+    async def get_user_activity_chart_data(self, days: int = 30) -> List[Dict[str, Any]]:
+        """Получить данные активности пользователей для графиков"""
+        try:
+            adapter = DatabaseAdapter(self.database_url)
+            await adapter.connect()
+
+            if adapter.db_type == 'sqlite':
+                query = """
+                    SELECT
+                        DATE(created_at) as date,
+                        COUNT(*) as new_users,
+                        0 as requests_count
+                    FROM users
+                    WHERE created_at >= date('now', '-{} days')
+                    GROUP BY DATE(created_at)
+
+                    UNION ALL
+
+                    SELECT
+                        DATE(created_at) as date,
+                        0 as new_users,
+                        COUNT(*) as requests_count
+                    FROM requests
+                    WHERE created_at >= date('now', '-{} days')
+                    GROUP BY DATE(created_at)
+
+                    ORDER BY date
+                """.format(days, days)
+            else:  # PostgreSQL
+                query = """
+                    SELECT
+                        DATE(created_at) as date,
+                        COUNT(*) as new_users,
+                        0 as requests_count
+                    FROM users
+                    WHERE created_at >= CURRENT_DATE - INTERVAL '%s days'
+                    GROUP BY DATE(created_at)
+
+                    UNION ALL
+
+                    SELECT
+                        DATE(created_at) as date,
+                        0 as new_users,
+                        COUNT(*) as requests_count
+                    FROM requests
+                    WHERE created_at >= CURRENT_DATE - INTERVAL '%s days'
+                    GROUP BY DATE(created_at)
+
+                    ORDER BY date
+                """
+                query = query % (days, days)
+
+            results = await adapter.fetch_all(query)
+
+            # Преобразуем результаты в нужный формат
+            activity_data = []
+            if results:
+                for row in results:
+                    if hasattr(row, '__getitem__'):
+                        activity_data.append({
+                            "date": str(row[0]),
+                            "new_users": row[1],
+                            "requests_count": row[2]
+                        })
+                    else:
+                        activity_data.append({
+                            "date": str(row.date),
+                            "new_users": row.new_users,
+                            "requests_count": row.requests_count
+                        })
+
+            await adapter.disconnect()
+            return activity_data
+
+        except Exception as e:
+            logger.error(f"Ошибка получения данных активности: {e}")
+            return []
+
+    async def get_audit_logs(self, page: int = 1, per_page: int = 50) -> Dict[str, Any]:
+        """Получить логи аудита"""
+        try:
+            adapter = DatabaseAdapter(self.database_url)
+            await adapter.connect()
+
+            offset = (page - 1) * per_page
+
+            # Общее количество
+            count_query = "SELECT COUNT(*) FROM audit_logs"
+            total_result = await adapter.fetch_one(count_query)
+            total = self._extract_value(total_result, 0)
+
+            # Логи с информацией о пользователе
+            if adapter.db_type == 'sqlite':
+                logs_query = """
+                    SELECT al.*, au.username
+                    FROM audit_logs al
+                    LEFT JOIN admin_users au ON al.admin_user_id = au.id
+                    ORDER BY al.created_at DESC
+                    LIMIT ? OFFSET ?
+                """
+                params = [per_page, offset]
+            else:  # PostgreSQL
+                logs_query = """
+                    SELECT al.*, au.username
+                    FROM audit_logs al
+                    LEFT JOIN admin_users au ON al.admin_user_id = au.id
+                    ORDER BY al.created_at DESC
+                    LIMIT $1 OFFSET $2
+                """
+                params = [per_page, offset]
+
+            logs = await adapter.fetch_all(logs_query, params)
+
+            # Преобразуем в словари
+            logs_list = []
+            if logs:
+                for log in logs:
+                    if hasattr(log, '__getitem__'):
+                        logs_list.append({
+                            "id": log[0],
+                            "admin_user_id": log[1],
+                            "action": log[2],
+                            "resource_type": log[3],
+                            "resource_id": log[4],
+                            "details": log[5],
+                            "ip_address": log[6],
+                            "user_agent": log[7],
+                            "created_at": log[8],
+                            "username": log[9] if len(log) > 9 else None
+                        })
+                    else:
+                        logs_list.append(dict(log))
+
+            await adapter.disconnect()
+
+            return {
+                "logs": logs_list,
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+                "pages": (total + per_page - 1) // per_page if total > 0 else 1
+            }
+
+        except Exception as e:
+            logger.error(f"Ошибка получения логов аудита: {e}")
+            return {"logs": [], "total": 0, "page": page, "per_page": per_page, "pages": 1}
 
 
 # Глобальный экземпляр менеджера
