@@ -20,16 +20,12 @@ class PaymentCleanupService:
         self.invoice_timeout = 1800  # 30 минут для оплаты инвойса
         self.running = False
 
-    def _extract_value(self, result, default=0):
-        """Универсальная функция для извлечения значения из результата запроса"""
+    def _extract_count(self, result) -> int:
+        """Извлечь значение COUNT из результата PostgreSQL"""
         if not result:
-            return default
-        if hasattr(result, '__getitem__'):
-            return result[0]
-        elif hasattr(result, 'count'):
-            return result.count
-        else:
-            return int(result) if result is not None else default
+            return 0
+        # PostgreSQL возвращает Record объект, берем первое значение
+        return int(result[0]) if result else 0
     
     async def cleanup_expired_invoices(self) -> Dict[str, int]:
         """
@@ -87,23 +83,14 @@ class PaymentCleanupService:
                             amount = payment.amount
                             created_at = payment.created_at
 
-                        # Обновляем статус на cancelled
-                        if adapter.db_type == 'sqlite':
-                            await adapter.execute("""
-                                UPDATE payments
-                                SET status = 'expired',
-                                    updated_at = CURRENT_TIMESTAMP,
-                                    cancellation_reason = 'Invoice expired after 30 minutes'
-                                WHERE payment_id = ?
-                            """, (payment_id,))
-                        else:  # PostgreSQL
-                            await adapter.execute("""
-                                UPDATE payments
-                                SET status = 'expired',
-                                    updated_at = NOW(),
-                                    cancellation_reason = 'Invoice expired after 30 minutes'
-                                WHERE payment_id = $1
-                            """, (payment_id,))
+                        # Обновляем статус на expired (PostgreSQL)
+                        await adapter.execute("""
+                            UPDATE payments
+                            SET status = 'expired',
+                                updated_at = NOW(),
+                                cancellation_reason = 'Invoice expired after 30 minutes'
+                            WHERE payment_id = $1
+                        """, (payment_id,))
 
                         cleanup_stats['cancelled'] += 1
 
@@ -142,19 +129,12 @@ class PaymentCleanupService:
             await adapter.connect()
 
             try:
-                # Удаляем старые неуспешные платежи
-                if adapter.db_type == 'sqlite':
-                    result = await adapter.execute("""
-                        DELETE FROM payments
-                        WHERE status IN ('expired', 'cancelled', 'failed')
-                        AND created_at < ?
-                    """, (cutoff_date,))
-                else:  # PostgreSQL
-                    result = await adapter.execute("""
-                        DELETE FROM payments
-                        WHERE status IN ('expired', 'cancelled', 'failed')
-                        AND created_at < $1
-                    """, (cutoff_date,))
+                # Удаляем старые неуспешные платежи (PostgreSQL)
+                result = await adapter.execute("""
+                    DELETE FROM payments
+                    WHERE status IN ('expired', 'cancelled', 'failed')
+                    AND created_at < $1
+                """, (cutoff_date,))
 
                 deleted_count = result if result else 0
 
@@ -192,19 +172,19 @@ class PaymentCleanupService:
             row = await adapter.fetch_one("""
                 SELECT COUNT(*) FROM payments WHERE status = 'pending'
             """)
-            stats['pending_invoices'] = self._extract_value(row, 0)
+            stats['pending_invoices'] = self._extract_count(row)
 
             # Количество просроченных платежей
             row = await adapter.fetch_one("""
                 SELECT COUNT(*) FROM payments WHERE status = 'expired'
             """)
-            stats['expired_invoices'] = self._extract_value(row, 0)
+            stats['expired_invoices'] = self._extract_count(row)
 
             # Самый старый ожидающий платеж
             row = await adapter.fetch_one("""
                 SELECT MIN(created_at) FROM payments WHERE status = 'pending'
             """)
-            oldest_value = self._extract_value(row, None)
+            oldest_value = row[0] if row and row[0] else None
             if oldest_value:
                 stats['oldest_pending'] = oldest_value
 

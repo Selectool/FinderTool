@@ -18,11 +18,10 @@ class UniversalDatabase:
     """Универсальный класс для работы с базой данных через DatabaseAdapter"""
     
     def __init__(self, database_url: str = None):
-        self.database_url = database_url or os.getenv('DATABASE_URL', 'sqlite:///bot.db')
+        self.database_url = database_url or os.getenv('DATABASE_URL')
+        if not self.database_url:
+            raise ValueError("DATABASE_URL обязательна! Укажите PostgreSQL URL в переменных окружения.")
         self.adapter = DatabaseAdapter(self.database_url)
-        
-        # Для совместимости с существующим кодом
-        self.db_path = "bot.db"  # Legacy поддержка
 
     async def init_db(self):
         """Инициализация базы данных (для совместимости)"""

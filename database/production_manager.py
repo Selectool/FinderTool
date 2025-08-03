@@ -30,28 +30,25 @@ class ProductionDatabaseManager:
         # Метрики
         self.query_stats = {}
 
-    def _extract_value(self, result, default=0):
-        """Универсальная функция для извлечения значения из результата запроса"""
+    def _extract_count(self, result) -> int:
+        """Извлечь значение COUNT из результата PostgreSQL"""
         if not result:
-            return default
-        if hasattr(result, '__getitem__'):
-            return result[0]
-        elif hasattr(result, 'count'):
-            return result.count
-        else:
-            return int(result) if result is not None else default
+            return 0
+        # PostgreSQL возвращает Record объект, берем первое значение
+        return int(result[0]) if result else 0
 
     def _get_database_url(self) -> str:
         """Получить URL базы данных из переменных окружения"""
-        # Приоритет: DATABASE_URL -> локальная SQLite
         database_url = os.getenv('DATABASE_URL')
 
-        if database_url:
-            logger.info(f"Используется PostgreSQL: {database_url.split('@')[0]}@***")
-            return database_url
-        else:
-            logger.info("Используется локальная SQLite база данных")
-            return f"sqlite:///{self.legacy_db_path}"
+        if not database_url:
+            raise ValueError("DATABASE_URL обязательна! Укажите PostgreSQL URL в переменных окружения.")
+
+        if not (database_url.startswith('postgresql://') or database_url.startswith('postgres://')):
+            raise ValueError("Поддерживается только PostgreSQL. DATABASE_URL должен начинаться с 'postgresql://' или 'postgres://'.")
+
+        logger.info(f"Используется PostgreSQL: {database_url.split('@')[0]}@***")
+        return database_url
 
     async def initialize_database(self) -> bool:
         """
@@ -501,27 +498,18 @@ class ProductionDatabaseManager:
             # Общее количество
             count_query = f"SELECT COUNT(*) FROM users WHERE {where_clause}"
             total_result = await adapter.fetch_one(count_query, params)
-            total = self._extract_value(total_result, 0)
+            total = self._extract_count(total_result)
 
-            # Пользователи
-            if adapter.db_type == 'sqlite':
-                users_query = f"""
-                    SELECT * FROM users
-                    WHERE {where_clause}
-                    ORDER BY created_at DESC
-                    LIMIT ? OFFSET ?
-                """
-                params.extend([per_page, offset])
-            else:  # PostgreSQL
-                param_limit = len(params) + 1
-                param_offset = len(params) + 2
-                users_query = f"""
-                    SELECT * FROM users
-                    WHERE {where_clause}
-                    ORDER BY created_at DESC
-                    LIMIT ${param_limit} OFFSET ${param_offset}
-                """
-                params.extend([per_page, offset])
+            # Пользователи (PostgreSQL)
+            param_limit = len(params) + 1
+            param_offset = len(params) + 2
+            users_query = f"""
+                SELECT * FROM users
+                WHERE {where_clause}
+                ORDER BY created_at DESC
+                LIMIT ${param_limit} OFFSET ${param_offset}
+            """
+            params.extend([per_page, offset])
 
             users = await adapter.fetch_all(users_query, params)
 
@@ -558,27 +546,17 @@ class ProductionDatabaseManager:
             # Общее количество
             count_query = "SELECT COUNT(*) FROM broadcasts"
             total_result = await adapter.fetch_one(count_query)
-            total = self._extract_value(total_result, 0)
+            total = self._extract_count(total_result)
 
-            # Рассылки с информацией о создателе
-            if adapter.db_type == 'sqlite':
-                broadcasts_query = """
-                    SELECT b.*, au.username as created_by_username
-                    FROM broadcasts b
-                    LEFT JOIN admin_users au ON b.created_by = au.id
-                    ORDER BY b.created_at DESC
-                    LIMIT ? OFFSET ?
-                """
-                params = [per_page, offset]
-            else:  # PostgreSQL
-                broadcasts_query = """
-                    SELECT b.*, au.username as created_by_username
-                    FROM broadcasts b
-                    LEFT JOIN admin_users au ON b.created_by = au.id
-                    ORDER BY b.created_at DESC
-                    LIMIT $1 OFFSET $2
-                """
-                params = [per_page, offset]
+            # Рассылки с информацией о создателе (PostgreSQL)
+            broadcasts_query = """
+                SELECT b.*, au.username as created_by_username
+                FROM broadcasts b
+                LEFT JOIN admin_users au ON b.created_by = au.id
+                ORDER BY b.created_at DESC
+                LIMIT $1 OFFSET $2
+            """
+            params = [per_page, offset]
 
             broadcasts = await adapter.fetch_all(broadcasts_query, params)
 
@@ -615,7 +593,7 @@ class ProductionDatabaseManager:
             # Общее количество рассылок
             total_query = "SELECT COUNT(*) FROM broadcasts"
             total_result = await adapter.fetch_one(total_query)
-            stats['total'] = self._extract_value(total_result, 0)
+            stats['total'] = self._extract_count(total_result)
 
             # Рассылки по статусам
             status_query = """
@@ -650,39 +628,24 @@ class ProductionDatabaseManager:
 
             # Общее количество пользователей
             total_users_result = await adapter.fetch_one("SELECT COUNT(*) FROM users")
-            stats['total_users'] = self._extract_value(total_users_result, 0)
+            stats['total_users'] = self._extract_count(total_users_result)
 
-            # Активные подписчики
-            if adapter.db_type == 'sqlite':
-                active_subs_query = """
-                    SELECT COUNT(*) FROM users
-                    WHERE is_subscribed = 1
-                    AND (subscription_end IS NULL OR subscription_end > datetime('now'))
-                """
-            else:  # PostgreSQL
-                active_subs_query = """
-                    SELECT COUNT(*) FROM users
-                    WHERE is_subscribed = TRUE
-                    AND (subscription_end IS NULL OR subscription_end > NOW())
-                """
-
+            # Активные подписчики (PostgreSQL)
+            active_subs_query = """
+                SELECT COUNT(*) FROM users
+                WHERE is_subscribed = TRUE
+                AND (subscription_end IS NULL OR subscription_end > NOW())
+            """
             active_subs_result = await adapter.fetch_one(active_subs_query)
-            stats['active_subscribers'] = self._extract_value(active_subs_result, 0)
+            stats['active_subscribers'] = self._extract_count(active_subs_result)
 
-            # Запросы за сегодня
-            if adapter.db_type == 'sqlite':
-                requests_today_query = """
-                    SELECT COUNT(*) FROM requests
-                    WHERE created_at >= date('now')
-                """
-            else:  # PostgreSQL
-                requests_today_query = """
-                    SELECT COUNT(*) FROM requests
-                    WHERE created_at >= CURRENT_DATE
-                """
-
+            # Запросы за сегодня (PostgreSQL)
+            requests_today_query = """
+                SELECT COUNT(*) FROM requests
+                WHERE created_at >= CURRENT_DATE
+            """
             requests_today_result = await adapter.fetch_one(requests_today_query)
-            stats['requests_today'] = self._extract_value(requests_today_result, 0)
+            stats['requests_today'] = self._extract_count(requests_today_result)
 
             await adapter.disconnect()
             return stats

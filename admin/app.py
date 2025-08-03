@@ -19,15 +19,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     from .config import (
         DEBUG, HOST, PORT, CORS_ORIGINS, ALLOWED_HOSTS,
-        LOG_LEVEL, DATABASE_PATH, UPLOAD_DIR
+        LOG_LEVEL, UPLOAD_DIR
     )
 except ImportError:
     from config import (
         DEBUG, HOST, PORT, CORS_ORIGINS, ALLOWED_HOSTS,
-        LOG_LEVEL, DATABASE_PATH, UPLOAD_DIR
+        LOG_LEVEL, UPLOAD_DIR
     )
-
-from database.universal_database import UniversalDatabase
 
 # Импорты для админ-панели
 try:
@@ -55,28 +53,16 @@ async def lifespan(app: FastAPI):
     # Инициализация при запуске
     logger.info("Запуск админ-панели...")
 
-    # Используем production database manager для админ-панели
+    # Используем production database manager для админ-панели (только PostgreSQL)
     try:
         from database.production_manager import ProductionDatabaseManager
-        import os
 
-        # Проверяем, что используется PostgreSQL
-        database_url = os.getenv("DATABASE_URL", "sqlite:///bot.db")
-        if database_url.startswith("postgresql"):
-            # Используем production manager для PostgreSQL
-            db = ProductionDatabaseManager()
-            await db.initialize_database()
-        else:
-            # Fallback для SQLite
-            from database.universal_database import UniversalDatabase
-            db = UniversalDatabase(DATABASE_PATH)
-            await db.init_db()
+        # Инициализируем PostgreSQL production manager
+        db = ProductionDatabaseManager()
+        await db.initialize_database()
     except Exception as e:
-        print(f"⚠️ Ошибка инициализации БД: {e}")
-        # Последний fallback
-        from database.universal_database import UniversalDatabase
-        db = UniversalDatabase(DATABASE_PATH)
-        await db.init_db()
+        print(f"❌ Ошибка инициализации PostgreSQL БД: {e}")
+        raise
 
     # Инициализация системы прав доступа для рассылок
     await init_broadcast_permissions(db)
