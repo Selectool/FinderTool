@@ -211,13 +211,14 @@ async def audit_logs_page(request: Request):
 
 # Подключение роутеров
 try:
-    from .api import auth, users, broadcasts, statistics, templates as template_routes, roles, audit, yookassa_webhook, payment_cleanup
+    from .api import auth, users, broadcasts, statistics, templates as template_routes, roles, audit, yookassa_webhook, payment_cleanup, media_broadcasts
 except ImportError:
-    from admin.api import auth, users, broadcasts, statistics, templates as template_routes, roles, audit, yookassa_webhook, payment_cleanup
+    from admin.api import auth, users, broadcasts, statistics, templates as template_routes, roles, audit, yookassa_webhook, payment_cleanup, media_broadcasts
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(broadcasts.router, prefix="/api/broadcasts", tags=["broadcasts"])
+app.include_router(media_broadcasts.router, tags=["media-broadcasts"])
 app.include_router(statistics.router, prefix="/api/statistics", tags=["statistics"])
 app.include_router(template_routes.router, prefix="/api/templates", tags=["templates"])
 app.include_router(roles.router, prefix="/api/roles", tags=["roles"])

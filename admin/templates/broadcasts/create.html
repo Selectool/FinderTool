@@ -1,0 +1,1408 @@
+{% extends "base.html" %} {% block title %}Создание рассылки{% endblock %} {%
+block extra_head %}
+<!-- Quill Rich Text Editor -->
+<link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet" />
+<script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+
+<!-- Flatpickr для выбора даты/времени -->
+<link
+	rel="stylesheet"
+	href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"
+/>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ru.js"></script>
+
+<style>
+	.preview-panel {
+		border: 1px solid #dee2e6;
+		border-radius: 0.375rem;
+		padding: 1rem;
+		background-color: #f8f9fa;
+		min-height: 200px;
+	}
+
+	.telegram-message {
+		background: white;
+		border-radius: 12px;
+		padding: 12px 16px;
+		max-width: 400px;
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+			sans-serif;
+		font-size: 14px;
+		line-height: 1.4;
+	}
+
+	.audience-stats {
+		background: #e3f2fd;
+		border-radius: 8px;
+		padding: 12px;
+		margin-top: 8px;
+	}
+
+	.template-item {
+		cursor: pointer;
+		transition: all 0.2s;
+	}
+
+	.template-item:hover {
+		background-color: #f8f9fa;
+		border-color: #0d6efd !important;
+	}
+
+	.template-item.selected {
+		background-color: #e7f3ff;
+		border-color: #0d6efd !important;
+	}
+
+	#editor {
+		height: 200px;
+	}
+
+	.media-upload-area {
+		border: 2px dashed #dee2e6;
+		border-radius: 8px;
+		padding: 2rem;
+		text-align: center;
+		transition: all 0.2s;
+	}
+
+	.media-upload-area:hover {
+		border-color: #0d6efd;
+		background-color: #f8f9fa;
+	}
+
+	.media-upload-area.dragover {
+		border-color: #0d6efd;
+		background-color: #e7f3ff;
+	}
+</style>
+{% endblock %} {% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+	<h1>📢 Создание рассылки</h1>
+	<a href="/broadcasts/" class="btn btn-outline-secondary">
+		← Назад к списку
+	</a>
+</div>
+
+<form id="broadcastForm" enctype="multipart/form-data">
+	<div class="row">
+		<!-- Основная форма -->
+		<div class="col-lg-8">
+			<!-- Основная информация -->
+			<div class="card mb-4">
+				<div class="card-header">
+					<h5 class="mb-0">📝 Основная информация</h5>
+				</div>
+				<div class="card-body">
+					<div class="mb-3">
+						<label for="broadcastName" class="form-label"
+							>Название рассылки</label
+						>
+						<input
+							type="text"
+							class="form-control"
+							id="broadcastName"
+							name="name"
+							placeholder="Например: Новогодняя акция 2025"
+							required
+						/>
+						<div class="form-text">Название для внутреннего использования</div>
+					</div>
+
+					<div class="mb-3">
+						<label for="messageType" class="form-label">Тип сообщения</label>
+						<select class="form-select" id="messageType" name="message_type">
+							<option value="text">📝 Только текст</option>
+							<option value="photo">🖼️ Текст с изображением</option>
+							<option value="document">📎 Текст с документом</option>
+						</select>
+					</div>
+
+					<!-- Медиа файлы -->
+					<div id="mediaSection" style="display: none">
+						<div class="mb-3">
+							<label class="form-label">Медиа файл</label>
+							<div class="media-upload-area" id="mediaUploadArea">
+								<div class="upload-content">
+									<i class="fas fa-cloud-upload-alt fa-2x text-muted mb-2"></i>
+									<p class="mb-2">
+										Перетащите файл сюда или нажмите для выбора
+									</p>
+									<small class="text-muted">
+										Изображения: JPG, PNG до 10MB<br />
+										Документы: PDF, DOC, DOCX до 50MB
+									</small>
+								</div>
+								<input
+									type="file"
+									id="mediaFile"
+									name="media_file"
+									accept="image/*,.pdf,.doc,.docx"
+									style="display: none"
+								/>
+							</div>
+							<div id="mediaPreview" style="display: none"></div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Шаблоны сообщений -->
+			<div class="card mb-4">
+				<div
+					class="card-header d-flex justify-content-between align-items-center"
+				>
+					<h5 class="mb-0">📋 Шаблоны сообщений</h5>
+					<button
+						type="button"
+						class="btn btn-sm btn-outline-primary"
+						onclick="toggleTemplates()"
+					>
+						<span id="templatesToggleText">Показать шаблоны</span>
+					</button>
+				</div>
+				<div class="card-body" id="templatesSection" style="display: none">
+					<div class="row" id="templatesList">
+						{% for template in templates %}
+						<div class="col-md-6 mb-3">
+							<div
+								class="card template-item"
+								data-template-id="{{ template.id }}"
+								onclick="selectTemplate({{ template.id }}, '{{ template.content|e }}')"
+							>
+								<div class="card-body">
+									<h6 class="card-title">{{ template.name }}</h6>
+									<p class="card-text text-muted small">
+										{{ template.content[:100] }}{% if template.content|length >
+										100 %}...{% endif %}
+									</p>
+									<small class="text-muted">{{ template.category }}</small>
+								</div>
+							</div>
+						</div>
+						{% endfor %}
+					</div>
+					{% if not templates %}
+					<div class="text-center text-muted">
+						<p>Шаблонов пока нет</p>
+						<a
+							href="/broadcasts/templates/create"
+							class="btn btn-sm btn-outline-primary"
+						>
+							Создать шаблон
+						</a>
+					</div>
+					{% endif %}
+				</div>
+			</div>
+
+			<!-- Редактор сообщения -->
+			<div class="card mb-4">
+				<div class="card-header">
+					<h5 class="mb-0">✏️ Текст сообщения</h5>
+				</div>
+				<div class="card-body">
+					<div class="mb-3">
+						<textarea
+							class="form-control"
+							id="messageTextArea"
+							name="message_text"
+							rows="8"
+							placeholder="Введите текст сообщения..."
+							required
+							maxlength="4096"
+						></textarea>
+						<input type="hidden" id="messageText" name="message_text_html" />
+					</div>
+
+					<div class="row mb-3">
+						<div class="col-md-6">
+							<div class="form-check">
+								<input
+									class="form-check-input"
+									type="checkbox"
+									id="enableMarkdown"
+									checked
+								/>
+								<label class="form-check-label" for="enableMarkdown">
+									Включить разметку Telegram
+								</label>
+							</div>
+						</div>
+						<div class="col-md-6 text-end">
+							<button
+								type="button"
+								class="btn btn-sm btn-outline-info"
+								onclick="showMarkdownHelp()"
+							>
+								❓ Справка по разметке
+							</button>
+						</div>
+					</div>
+
+					<div class="mt-3">
+						<small class="text-muted">
+							💡 Поддерживаются: <strong>*жирный*</strong>, <em>_курсив_</em>,
+							<code>`моноширинный`</code>, [ссылки](url) и эмодзи
+						</small>
+					</div>
+
+					<div class="mt-2">
+						<span class="badge bg-secondary" id="charCount">0 символов</span>
+						<span
+							class="badge bg-warning"
+							id="charWarning"
+							style="display: none"
+						>
+							Превышен лимит Telegram (4096 символов)
+						</span>
+						<span class="badge bg-danger" id="charError" style="display: none">
+							Критическое превышение лимита!
+						</span>
+					</div>
+				</div>
+			</div>
+
+			<!-- Планирование -->
+			<div class="card mb-4">
+				<div class="card-header">
+					<h5 class="mb-0">⏰ Планирование отправки</h5>
+				</div>
+				<div class="card-body">
+					<div class="form-check mb-3">
+						<input
+							class="form-check-input"
+							type="radio"
+							name="schedule_type"
+							id="sendNow"
+							value="now"
+							checked
+						/>
+						<label class="form-check-label" for="sendNow">
+							🚀 Отправить сейчас
+						</label>
+					</div>
+
+					<div class="form-check mb-3">
+						<input
+							class="form-check-input"
+							type="radio"
+							name="schedule_type"
+							id="sendLater"
+							value="later"
+						/>
+						<label class="form-check-label" for="sendLater">
+							📅 Запланировать на определенное время
+						</label>
+					</div>
+
+					<div id="scheduleDateTime" style="display: none">
+						<div class="row">
+							<div class="col-md-6">
+								<label for="scheduleDate" class="form-label">Дата</label>
+								<input
+									type="text"
+									class="form-control"
+									id="scheduleDate"
+									name="schedule_date"
+									placeholder="Выберите дату"
+								/>
+							</div>
+							<div class="col-md-6">
+								<label for="scheduleTime" class="form-label">Время</label>
+								<input
+									type="text"
+									class="form-control"
+									id="scheduleTime"
+									name="schedule_time"
+									placeholder="Выберите время"
+								/>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Боковая панель -->
+		<div class="col-lg-4">
+			<!-- Предварительный просмотр -->
+			<div class="card mb-4">
+				<div class="card-header">
+					<h5 class="mb-0">👁️ Предварительный просмотр</h5>
+				</div>
+				<div class="card-body">
+					<div class="preview-panel">
+						<div class="telegram-message" id="messagePreview">
+							<em class="text-muted">Введите текст сообщения...</em>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Целевая аудитория -->
+			<div class="card mb-4">
+				<div
+					class="card-header d-flex justify-content-between align-items-center"
+				>
+					<h5 class="mb-0">🎯 Целевая аудитория</h5>
+					<button
+						type="button"
+						class="btn btn-sm btn-outline-primary"
+						onclick="refreshAudienceStats()"
+					>
+						🔄 Обновить
+					</button>
+				</div>
+				<div class="card-body">
+					<div class="form-check mb-2">
+						<input
+							class="form-check-input"
+							type="radio"
+							name="target_audience"
+							id="targetAll"
+							value="all"
+						/>
+						<label class="form-check-label" for="targetAll">
+							👥 Все пользователи
+							<small class="text-muted d-block"
+								>Включая неактивных и заблокированных</small
+							>
+						</label>
+					</div>
+
+					<div class="form-check mb-2">
+						<input
+							class="form-check-input"
+							type="radio"
+							name="target_audience"
+							id="targetActive"
+							value="active"
+							checked
+						/>
+						<label class="form-check-label" for="targetActive">
+							🟢 Только активные
+							<small class="text-muted d-block"
+								>Пользователи, активные за последние 30 дней</small
+							>
+						</label>
+					</div>
+
+					<div class="form-check mb-2">
+						<input
+							class="form-check-input"
+							type="radio"
+							name="target_audience"
+							id="targetSubscribers"
+							value="subscribers"
+						/>
+						<label class="form-check-label" for="targetSubscribers">
+							💎 Только подписчики
+							<small class="text-muted d-block"
+								>Пользователи с активной подпиской</small
+							>
+						</label>
+					</div>
+
+					<div class="form-check mb-3">
+						<input
+							class="form-check-input"
+							type="radio"
+							name="target_audience"
+							id="targetCustom"
+							value="custom"
+						/>
+						<label class="form-check-label" for="targetCustom">
+							🎯 Выборочно
+							<small class="text-muted d-block"
+								>Указать конкретных пользователей</small
+							>
+						</label>
+					</div>
+
+					<!-- Кастомная аудитория -->
+					<div id="customAudienceSection" style="display: none">
+						<div class="mb-3">
+							<label for="customUserIds" class="form-label">
+								ID пользователей (через запятую)
+							</label>
+							<textarea
+								class="form-control"
+								id="customUserIds"
+								name="custom_user_ids"
+								rows="3"
+								placeholder="123456789, 987654321, ..."
+							></textarea>
+							<div class="form-text">
+								Введите ID пользователей Telegram через запятую
+							</div>
+						</div>
+						<button
+							type="button"
+							class="btn btn-sm btn-outline-secondary"
+							onclick="validateCustomUsers()"
+						>
+							✅ Проверить пользователей
+						</button>
+					</div>
+
+					<!-- Статистика аудитории -->
+					<div class="row mt-3">
+						<div class="col-md-6">
+							<div class="alert alert-primary">
+								<div class="d-flex justify-content-between align-items-center">
+									<strong>Получателей:</strong>
+									<span id="recipientCount" class="badge bg-primary fs-6">
+										<span
+											class="spinner-border spinner-border-sm"
+											role="status"
+										></span>
+									</span>
+								</div>
+								<div class="mt-2">
+									<small class="text-muted">
+										Примерное время отправки: <span id="estimatedTime">-</span>
+									</small>
+								</div>
+							</div>
+						</div>
+						<div class="col-md-6">
+							<div class="alert alert-info">
+								<strong>Детали аудитории:</strong>
+								<ul class="mb-0 mt-2" id="audienceDetails">
+									<li>Загрузка...</li>
+								</ul>
+							</div>
+						</div>
+					</div>
+
+					<!-- Кнопка предпросмотра получателей -->
+					<button
+						type="button"
+						class="btn btn-outline-info btn-sm"
+						onclick="previewRecipients()"
+					>
+						👁️ Предпросмотр списка получателей
+					</button>
+				</div>
+			</div>
+
+			<!-- Настройки отправки -->
+			<div class="card mb-4">
+				<div class="card-header">
+					<h5 class="mb-0">⚙️ Настройки отправки</h5>
+				</div>
+				<div class="card-body">
+					<div class="mb-3">
+						<label for="sendRate" class="form-label">Скорость отправки</label>
+						<select class="form-select" id="sendRate" name="send_rate">
+							<option value="slow">🐌 Медленно (10 сообщений/мин)</option>
+							<option value="normal" selected>
+								⚡ Обычно (30 сообщений/мин)
+							</option>
+							<option value="fast">🚀 Быстро (60 сообщений/мин)</option>
+						</select>
+						<div class="form-text">
+							Медленная скорость снижает риск блокировки
+						</div>
+					</div>
+
+					<div class="form-check mb-3">
+						<input
+							class="form-check-input"
+							type="checkbox"
+							id="skipBlocked"
+							name="skip_blocked"
+							checked
+						/>
+						<label class="form-check-label" for="skipBlocked">
+							Пропускать заблокированных пользователей
+						</label>
+					</div>
+
+					<div class="form-check mb-3">
+						<input
+							class="form-check-input"
+							type="checkbox"
+							id="saveAsTemplate"
+							name="save_as_template"
+						/>
+						<label class="form-check-label" for="saveAsTemplate">
+							Сохранить как шаблон
+						</label>
+					</div>
+				</div>
+			</div>
+
+			<!-- Кнопки действий -->
+			<div class="card">
+				<div class="card-body">
+					<button
+						type="button"
+						class="btn btn-outline-primary w-100 mb-2"
+						onclick="showPreview()"
+					>
+						👁️ Предварительный просмотр
+					</button>
+
+					<button type="submit" class="btn btn-success w-100 mb-2">
+						📤 Создать рассылку
+					</button>
+
+					<button
+						type="button"
+						class="btn btn-outline-secondary w-100"
+						onclick="saveDraft()"
+					>
+						💾 Сохранить как черновик
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+</form>
+
+<!-- Модальное окно предварительного просмотра -->
+<div class="modal fade" id="previewModal" tabindex="-1">
+	<div class="modal-dialog modal-lg">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title">👁️ Предварительный просмотр рассылки</h5>
+				<button
+					type="button"
+					class="btn-close"
+					data-bs-dismiss="modal"
+				></button>
+			</div>
+			<div class="modal-body">
+				<div class="row">
+					<div class="col-md-6">
+						<h6>Информация о рассылке</h6>
+						<table class="table table-sm">
+							<tr>
+								<td>Название:</td>
+								<td id="previewName">-</td>
+							</tr>
+							<tr>
+								<td>Получателей:</td>
+								<td id="previewRecipients">-</td>
+							</tr>
+							<tr>
+								<td>Отправка:</td>
+								<td id="previewSchedule">-</td>
+							</tr>
+						</table>
+					</div>
+					<div class="col-md-6">
+						<h6>Как увидят пользователи</h6>
+						<div class="telegram-message" id="previewMessage">
+							<!-- Содержимое сообщения -->
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+					Закрыть
+				</button>
+				<button
+					type="button"
+					class="btn btn-success"
+					onclick="submitBroadcast()"
+				>
+					📤 Создать рассылку
+				</button>
+			</div>
+		</div>
+	</div>
+</div>
+{% endblock %} {% block extra_js %}
+<script>
+	// Глобальные переменные
+	let audienceData = {}
+	let currentRecipients = []
+
+	// Глобальные функции для onclick обработчиков
+	async function refreshAudienceStats() {
+		await updateAudienceStats()
+	}
+
+	function validateCustomUsers() {
+		const customUserIds = document.getElementById('customUserIds').value
+		const userIds = customUserIds
+			.split(',')
+			.map(id => id.trim())
+			.filter(id => id)
+
+		if (userIds.length === 0) {
+			alert('Введите хотя бы один ID пользователя')
+			return
+		}
+
+		// Простая валидация ID (должны быть числами)
+		const invalidIds = userIds.filter(id => !/^\d+$/.test(id))
+		if (invalidIds.length > 0) {
+			alert(`Некорректные ID пользователей: ${invalidIds.join(', ')}`)
+			return
+		}
+
+		alert(`Проверено ${userIds.length} пользователей. Все ID корректны.`)
+	}
+
+	function showMarkdownHelp() {
+		const helpHtml = `
+			<div class="modal fade" id="markdownHelpModal" tabindex="-1">
+				<div class="modal-dialog">
+					<div class="modal-content">
+						<div class="modal-header">
+							<h5 class="modal-title">Справка по разметке Telegram</h5>
+							<button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+						</div>
+						<div class="modal-body">
+							<table class="table table-sm">
+								<thead>
+									<tr>
+										<th>Разметка</th>
+										<th>Результат</th>
+									</tr>
+								</thead>
+								<tbody>
+									<tr>
+										<td><code>*жирный*</code></td>
+										<td><strong>жирный</strong></td>
+									</tr>
+									<tr>
+										<td><code>_курсив_</code></td>
+										<td><em>курсив</em></td>
+									</tr>
+									<tr>
+										<td><code>\`моноширинный\`</code></td>
+										<td><code>моноширинный</code></td>
+									</tr>
+									<tr>
+										<td><code>[ссылка](https://example.com)</code></td>
+										<td><a href="#">ссылка</a></td>
+									</tr>
+								</tbody>
+							</table>
+							<div class="alert alert-info">
+								<strong>Совет:</strong> Используйте эмодзи для улучшения восприятия сообщения! 🎉
+							</div>
+						</div>
+						<div class="modal-footer">
+							<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+						</div>
+					</div>
+				</div>
+			</div>
+		`
+
+		// Удаляем предыдущее модальное окно если есть
+		const existingModal = document.getElementById('markdownHelpModal')
+		if (existingModal) {
+			existingModal.remove()
+		}
+
+		// Добавляем новое модальное окно
+		document.body.insertAdjacentHTML('beforeend', helpHtml)
+
+		// Показываем модальное окно
+		new bootstrap.Modal(document.getElementById('markdownHelpModal')).show()
+	}
+
+	function showPreview() {
+		const messageText = document.getElementById('messageTextArea').value.trim()
+		const broadcastName = document.getElementById('broadcastName').value.trim()
+		const enableMarkdown = document.getElementById('enableMarkdown').checked
+		const targetType = document.querySelector(
+			'input[name="target_audience"]:checked'
+		).value
+
+		if (!messageText) {
+			alert('Введите текст сообщения для предпросмотра')
+			return
+		}
+
+		// Обновляем информацию в модальном окне
+		document.getElementById('previewName').textContent =
+			broadcastName || 'Без названия'
+		document.getElementById('previewRecipients').textContent =
+			audienceData.recipients || 0
+		document.getElementById('previewSchedule').textContent = 'Сейчас'
+
+		// Обновляем предпросмотр сообщения
+		const previewMessage = document.getElementById('previewMessage')
+		if (enableMarkdown) {
+			// Простая обработка Telegram разметки
+			let formattedText = messageText
+				.replace(/\*([^*]+)\*/g, '<strong>$1</strong>')
+				.replace(/_([^_]+)_/g, '<em>$1</em>')
+				.replace(/`([^`]+)`/g, '<code>$1</code>')
+				.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+				.replace(/\n/g, '<br>')
+			previewMessage.innerHTML = formattedText
+		} else {
+			previewMessage.textContent = messageText
+		}
+
+		// Показываем модальное окно
+		new bootstrap.Modal(document.getElementById('previewModal')).show()
+	}
+
+	async function previewRecipients() {
+		const targetType = document.querySelector(
+			'input[name="target_audience"]:checked'
+		).value
+
+		try {
+			const response = await fetch(
+				`/api/broadcasts/recipients-preview?target_type=${targetType}&limit=50`
+			)
+			const data = await response.json()
+
+			// Создаем модальное окно для предпросмотра
+			showRecipientsModal(data)
+		} catch (error) {
+			console.error('Ошибка загрузки предпросмотра получателей:', error)
+			alert('Ошибка загрузки предпросмотра получателей')
+		}
+	}
+
+	function submitBroadcast() {
+		document.getElementById('broadcastForm').dispatchEvent(new Event('submit'))
+	}
+
+	document.addEventListener('DOMContentLoaded', function () {
+		// Инициализация выбора даты/времени (если flatpickr доступен)
+		if (typeof flatpickr !== 'undefined') {
+			flatpickr('#scheduleDate', {
+				locale: 'ru',
+				dateFormat: 'd.m.Y',
+				minDate: 'today',
+			})
+
+			flatpickr('#scheduleTime', {
+				enableTime: true,
+				noCalendar: true,
+				dateFormat: 'H:i',
+				time_24hr: true,
+			})
+		}
+
+		// Обработчики событий
+		setupEventListeners()
+
+		// Загрузка статистики аудитории
+		updateAudienceStats()
+
+		// Восстановление автосохранения (временно отключено)
+		// restoreAutoSave()
+
+		// Запуск автосохранения (временно отключено)
+		// startAutoSave()
+	})
+
+	function setupEventListeners() {
+		// Обработка ввода текста сообщения
+		const messageTextArea = document.getElementById('messageTextArea')
+		messageTextArea.addEventListener('input', function () {
+			updatePreview()
+			updateCharCount()
+		})
+
+		// Переключение типа планирования
+		document.querySelectorAll('input[name="schedule_type"]').forEach(radio => {
+			radio.addEventListener('change', function () {
+				const scheduleSection = document.getElementById('scheduleDateTime')
+				scheduleSection.style.display =
+					this.value === 'later' ? 'block' : 'none'
+			})
+		})
+
+		// Переключение целевой аудитории
+		document
+			.querySelectorAll('input[name="target_audience"]')
+			.forEach(radio => {
+				radio.addEventListener('change', function () {
+					const customSection = document.getElementById('customAudienceSection')
+					customSection.style.display =
+						this.value === 'custom' ? 'block' : 'none'
+					updateAudienceStats()
+				})
+			})
+
+		// Переключение типа сообщения
+		const messageTypeSelect = document.getElementById('messageType')
+		if (messageTypeSelect) {
+			messageTypeSelect.addEventListener('change', function () {
+				const mediaSection = document.getElementById('mediaSection')
+				if (mediaSection) {
+					mediaSection.style.display = this.value !== 'text' ? 'block' : 'none'
+				}
+			})
+		}
+
+		// Обработка загрузки файлов
+		const uploadArea = document.getElementById('mediaUploadArea')
+		const fileInput = document.getElementById('mediaFile')
+
+		if (uploadArea && fileInput) {
+			uploadArea.addEventListener('click', () => fileInput.click())
+			uploadArea.addEventListener('dragover', handleDragOver)
+			uploadArea.addEventListener('drop', handleDrop)
+			fileInput.addEventListener('change', handleFileSelect)
+		}
+
+		// Отправка формы
+		document
+			.getElementById('broadcastForm')
+			.addEventListener('submit', handleFormSubmit)
+	}
+
+	function updatePreview() {
+		const messageTextArea = document.getElementById('messageTextArea')
+		const content = messageTextArea.value
+		const preview = document.getElementById('messagePreview')
+		const enableMarkdown = document.getElementById('enableMarkdown').checked
+
+		if (!content.trim()) {
+			preview.innerHTML =
+				'<em class="text-muted">Введите текст сообщения...</em>'
+		} else {
+			// Конвертируем текст в Telegram-совместимый формат
+			const telegramText = enableMarkdown
+				? convertMarkdownToHtml(content)
+				: escapeHtml(content)
+			preview.innerHTML = telegramText
+		}
+	}
+
+	function updateCharCount() {
+		const messageTextArea = document.getElementById('messageTextArea')
+		const content = messageTextArea.value
+		const charCount = content.length
+		const charCountElement = document.getElementById('charCount')
+		const charWarning = document.getElementById('charWarning')
+		const charError = document.getElementById('charError')
+
+		charCountElement.textContent = `${charCount} символов`
+
+		if (charCount > 4096) {
+			charCountElement.className = 'badge bg-danger'
+			charWarning.style.display = 'none'
+			charError.style.display = 'inline'
+		} else if (charCount > 3500) {
+			charCountElement.className = 'badge bg-warning'
+			charWarning.style.display = 'inline'
+			charError.style.display = 'none'
+		} else {
+			charCountElement.className = 'badge bg-secondary'
+			charWarning.style.display = 'none'
+			charError.style.display = 'none'
+		}
+	}
+
+	function convertMarkdownToHtml(text) {
+		return text
+			.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+			.replace(/\*(.*?)\*/g, '<strong>$1</strong>')
+			.replace(/__(.*?)__/g, '<em>$1</em>')
+			.replace(/_(.*?)_/g, '<em>$1</em>')
+			.replace(/`(.*?)`/g, '<code>$1</code>')
+			.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+			.replace(/\n/g, '<br>')
+	}
+
+	function escapeHtml(text) {
+		const div = document.createElement('div')
+		div.textContent = text
+		return div.innerHTML.replace(/\n/g, '<br>')
+	}
+
+	function convertToTelegramFormat(html) {
+		// Простая конвертация HTML в Telegram-совместимый формат
+		return html
+			.replace(/<strong>/g, '<b>')
+			.replace(/<\/strong>/g, '</b>')
+			.replace(/<em>/g, '<i>')
+			.replace(/<\/em>/g, '</i>')
+			.replace(/<code>/g, '<code>')
+			.replace(/<\/code>/g, '</code>')
+			.replace(/<p>/g, '')
+			.replace(/<\/p>/g, '\n')
+			.replace(/<br>/g, '\n')
+	}
+
+	async function updateAudienceStats() {
+		const targetType = document.querySelector(
+			'input[name="target_audience"]:checked'
+		).value
+
+		// Показываем индикатор загрузки
+		const recipientCount = document.getElementById('recipientCount')
+		recipientCount.innerHTML =
+			'<span class="spinner-border spinner-border-sm" role="status"></span>'
+
+		try {
+			const response = await fetch(
+				`/api/broadcasts/audience-stats?target_type=${targetType}`
+			)
+			const data = await response.json()
+
+			// Обновляем количество получателей
+			recipientCount.textContent = data.recipients || 0
+			recipientCount.className = 'badge bg-primary fs-6'
+
+			// Обновляем время отправки
+			document.getElementById('estimatedTime').textContent =
+				data.estimated_time || '-'
+
+			// Обновляем детали аудитории
+			const audienceDetails = document.getElementById('audienceDetails')
+			audienceDetails.innerHTML = `
+				<li>Всего пользователей: ${data.details.total_users}</li>
+				<li>Активных: ${data.details.active_users}</li>
+				<li>Подписчиков: ${data.details.subscribers}</li>
+				<li>Заблокированных: ${data.details.blocked_users}</li>
+			`
+
+			// Сохраняем данные для использования в других функциях
+			audienceData = data
+		} catch (error) {
+			console.error('Ошибка загрузки статистики аудитории:', error)
+			recipientCount.textContent = 'Ошибка'
+			recipientCount.className = 'badge bg-danger fs-6'
+		}
+	}
+
+	async function refreshAudienceStats() {
+		await updateAudienceStats()
+	}
+
+	async function previewRecipients() {
+		const targetType = document.querySelector(
+			'input[name="target_audience"]:checked'
+		).value
+
+		try {
+			const response = await fetch(
+				`/api/broadcasts/recipients-preview?target_type=${targetType}&limit=50`
+			)
+			const data = await response.json()
+
+			// Создаем модальное окно для предпросмотра
+			showRecipientsModal(data)
+		} catch (error) {
+			console.error('Ошибка загрузки предпросмотра получателей:', error)
+			alert('Ошибка загрузки предпросмотра получателей')
+		}
+	}
+
+	function showRecipientsModal(data) {
+		const modalHtml = `
+			<div class="modal fade" id="recipientsModal" tabindex="-1">
+				<div class="modal-dialog modal-lg">
+					<div class="modal-content">
+						<div class="modal-header">
+							<h5 class="modal-title">Предпросмотр получателей (${data.total})</h5>
+							<button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+						</div>
+						<div class="modal-body">
+							<div class="table-responsive">
+								<table class="table table-sm">
+									<thead>
+										<tr>
+											<th>ID</th>
+											<th>Имя</th>
+											<th>Username</th>
+											<th>Дата регистрации</th>
+										</tr>
+									</thead>
+									<tbody>
+										${data.recipients
+											.map(
+												user => `
+											<tr>
+												<td>${user.user_id}</td>
+												<td>${user.first_name || ''} ${user.last_name || ''}</td>
+												<td>@${user.username || 'нет'}</td>
+												<td>${new Date(user.created_at).toLocaleDateString('ru-RU')}</td>
+											</tr>
+										`
+											)
+											.join('')}
+									</tbody>
+								</table>
+							</div>
+						</div>
+						<div class="modal-footer">
+							<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+						</div>
+					</div>
+				</div>
+			</div>
+		`
+
+		// Удаляем предыдущее модальное окно если есть
+		const existingModal = document.getElementById('recipientsModal')
+		if (existingModal) {
+			existingModal.remove()
+		}
+
+		// Добавляем новое модальное окно
+		document.body.insertAdjacentHTML('beforeend', modalHtml)
+
+		// Показываем модальное окно
+		new bootstrap.Modal(document.getElementById('recipientsModal')).show()
+	}
+
+	function toggleTemplates() {
+		const section = document.getElementById('templatesSection')
+		const toggleText = document.getElementById('templatesToggleText')
+
+		if (section.style.display === 'none') {
+			section.style.display = 'block'
+			toggleText.textContent = 'Скрыть шаблоны'
+		} else {
+			section.style.display = 'none'
+			toggleText.textContent = 'Показать шаблоны'
+		}
+	}
+
+	function selectTemplate(templateId, content) {
+		// Убираем выделение с других шаблонов
+		document.querySelectorAll('.template-item').forEach(item => {
+			item.classList.remove('selected')
+		})
+
+		// Выделяем выбранный шаблон
+		document
+			.querySelector(`[data-template-id="${templateId}"]`)
+			.classList.add('selected')
+
+		// Вставляем содержимое в textarea
+		const messageTextArea = document.getElementById('messageTextArea')
+		messageTextArea.value = content
+		updatePreview()
+		updateCharCount()
+	}
+
+	function handleDragOver(e) {
+		e.preventDefault()
+		e.currentTarget.classList.add('dragover')
+	}
+
+	function handleDrop(e) {
+		e.preventDefault()
+		e.currentTarget.classList.remove('dragover')
+
+		const files = e.dataTransfer.files
+		if (files.length > 0) {
+			handleFile(files[0])
+		}
+	}
+
+	function handleFileSelect(e) {
+		const file = e.target.files[0]
+		if (file) {
+			handleFile(file)
+		}
+	}
+
+	function handleFile(file) {
+		const preview = document.getElementById('mediaPreview')
+		const uploadArea = document.getElementById('mediaUploadArea')
+
+		// Проверка типа файла
+		const messageType = document.getElementById('messageType').value
+		const isImage = file.type.startsWith('image/')
+		const isDocument = !isImage
+
+		if (messageType === 'photo' && !isImage) {
+			alert('Выберите изображение (JPG, PNG)')
+			return
+		}
+
+		if (messageType === 'document' && isImage) {
+			alert('Выберите документ (PDF, DOC, DOCX)')
+			return
+		}
+
+		// Показываем превью
+		preview.innerHTML = `
+        <div class="d-flex align-items-center">
+            <i class="fas fa-${isImage ? 'image' : 'file-alt'} fa-2x me-3"></i>
+            <div>
+                <strong>${file.name}</strong><br>
+                <small class="text-muted">${(file.size / 1024 / 1024).toFixed(
+									2
+								)} MB</small>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-danger ms-auto" onclick="removeFile()">
+                🗑️
+            </button>
+        </div>
+    `
+
+		preview.style.display = 'block'
+		uploadArea.style.display = 'none'
+	}
+
+	function removeFile() {
+		document.getElementById('mediaFile').value = ''
+		document.getElementById('mediaPreview').style.display = 'none'
+		document.getElementById('mediaUploadArea').style.display = 'block'
+	}
+
+	function previewBroadcast() {
+		// Заполняем данные в модальном окне
+		document.getElementById('previewName').textContent =
+			document.getElementById('broadcastName').value || 'Без названия'
+
+		document.getElementById('previewRecipients').textContent =
+			document.getElementById('recipientCount').textContent
+
+		const scheduleType = document.querySelector(
+			'input[name="schedule_type"]:checked'
+		).value
+		document.getElementById('previewSchedule').textContent =
+			scheduleType === 'now' ? 'Немедленно' : 'Запланировано'
+
+		document.getElementById('previewMessage').innerHTML =
+			document.getElementById('messagePreview').innerHTML
+
+		// Показываем модальное окно
+		new bootstrap.Modal(document.getElementById('previewModal')).show()
+	}
+
+	async function handleFormSubmit(e) {
+		e.preventDefault()
+
+		// Валидация формы
+		const messageText = document.getElementById('messageTextArea').value.trim()
+		const broadcastName = document.getElementById('broadcastName').value.trim()
+
+		if (!messageText) {
+			alert('Введите текст сообщения')
+			return
+		}
+
+		if (!broadcastName) {
+			alert('Введите название рассылки')
+			return
+		}
+
+		if (messageText.length > 4096) {
+			alert('Текст сообщения слишком длинный (максимум 4096 символов)')
+			return
+		}
+
+		// Подготавливаем данные для отправки
+		const targetType = document.querySelector(
+			'input[name="target_audience"]:checked'
+		).value
+		const sendNow =
+			document.querySelector('input[name="schedule_type"]:checked').value ===
+			'now'
+
+		// Получаем скорость отправки и конвертируем в число сообщений в минуту
+		const sendRateElement = document.getElementById('sendRate')
+		let sendSpeed = 30 // по умолчанию
+		if (sendRateElement) {
+			const rateValue = sendRateElement.value
+			if (rateValue === 'slow') sendSpeed = 10
+			else if (rateValue === 'normal') sendSpeed = 30
+			else if (rateValue === 'fast') sendSpeed = 60
+		}
+
+		const skipBlocked = document.getElementById('skipBlocked')?.checked || true
+		const saveAsTemplate =
+			document.getElementById('saveAsTemplate')?.checked || false
+		const parseMode = document.getElementById('enableMarkdown')?.checked
+			? 'Markdown'
+			: 'HTML'
+
+		const requestData = {
+			title: broadcastName,
+			message_text: messageText,
+			message_type: document.getElementById('messageType')?.value || 'text',
+			target_type: targetType,
+			send_now: sendNow,
+			scheduled_time: sendNow
+				? null
+				: document.getElementById('scheduledDateTime')?.value,
+			send_speed: sendSpeed,
+			skip_blocked: skipBlocked,
+			save_as_template: saveAsTemplate,
+			parse_mode: parseMode,
+		}
+
+		try {
+			// Проверяем, есть ли медиафайл
+			const fileInput = document.getElementById('mediaFile')
+			const hasMediaFile =
+				fileInput && fileInput.files && fileInput.files.length > 0
+
+			let response
+
+			if (hasMediaFile) {
+				// Отправляем как FormData для медиафайлов
+				const formData = new FormData()
+				formData.append('title', broadcastName)
+				formData.append('message_text', messageText)
+				formData.append('target_users', targetType)
+				formData.append('parse_mode', parseMode)
+				formData.append('file', fileInput.files[0])
+
+				// Добавляем подпись к медиафайлу если есть
+				const mediaCaption = document.getElementById('mediaCaption')?.value
+				if (mediaCaption) {
+					formData.append('media_caption', mediaCaption)
+				}
+
+				response = await fetch('/api/media-broadcasts/create', {
+					method: 'POST',
+					body: formData,
+				})
+			} else {
+				// Обычная текстовая рассылка
+				response = await fetch('/api/broadcasts/', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify(requestData),
+				})
+			}
+
+			if (response.ok) {
+				const data = await response.json()
+				if (data.success) {
+					alert(data.message + `\nПолучателей: ${data.target_count}`)
+					window.location.href = `/broadcasts/`
+				} else {
+					alert('Ошибка создания рассылки')
+				}
+			} else {
+				const error = await response.json()
+				alert(`Ошибка: ${error.detail}`)
+			}
+		} catch (error) {
+			console.error('Ошибка создания рассылки:', error)
+			alert('Ошибка создания рассылки')
+		}
+	}
+
+	async function saveDraft() {
+		const messageText = document.getElementById('messageTextArea').value.trim()
+		const broadcastName = document.getElementById('broadcastName').value.trim()
+
+		if (!messageText && !broadcastName) {
+			alert('Нечего сохранять - введите название или текст сообщения')
+			return
+		}
+
+		// Подготавливаем данные черновика
+		const draftData = {
+			name: broadcastName || 'Черновик ' + new Date().toLocaleString('ru-RU'),
+			message_text: messageText,
+			target_type: document.querySelector(
+				'input[name="target_audience"]:checked'
+			).value,
+			parse_mode: document.getElementById('enableMarkdown').checked
+				? 'Markdown'
+				: 'HTML',
+			send_speed: document.getElementById('sendRate').value,
+			skip_blocked: document.getElementById('skipBlocked').checked,
+			save_as_template: document.getElementById('saveAsTemplate').checked,
+		}
+
+		// Добавляем кастомных пользователей если выбрано
+		if (draftData.target_type === 'custom') {
+			draftData.custom_user_ids = document.getElementById('customUserIds').value
+		}
+
+		try {
+			const response = await fetch('/api/broadcasts/drafts', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(draftData),
+			})
+
+			if (response.ok) {
+				const data = await response.json()
+				alert('Черновик сохранен успешно!')
+				// Можно добавить кнопку для перехода к списку черновиков
+			} else {
+				const error = await response.json()
+				alert(`Ошибка сохранения черновика: ${error.detail}`)
+			}
+		} catch (error) {
+			console.error('Ошибка сохранения черновика:', error)
+			alert('Ошибка сохранения черновика')
+		}
+	}
+
+	// Автосохранение черновика каждые 30 секунд
+	let autoSaveInterval
+	function startAutoSave() {
+		autoSaveInterval = setInterval(() => {
+			const messageText = document
+				.getElementById('messageTextArea')
+				.value.trim()
+			const broadcastName = document
+				.getElementById('broadcastName')
+				.value.trim()
+
+			if (messageText || broadcastName) {
+				// Сохраняем в localStorage как резервную копию
+				const autoSaveData = {
+					name: broadcastName,
+					message_text: messageText,
+					target_type: document.querySelector(
+						'input[name="target_audience"]:checked'
+					).value,
+					timestamp: Date.now(),
+				}
+				localStorage.setItem('broadcast_autosave', JSON.stringify(autoSaveData))
+			}
+		}, 30000) // 30 секунд
+	}
+
+	// Восстановление из автосохранения
+	function restoreAutoSave() {
+		const autoSaveData = localStorage.getItem('broadcast_autosave')
+		if (autoSaveData) {
+			try {
+				const data = JSON.parse(autoSaveData)
+				const timeDiff = Date.now() - data.timestamp
+
+				// Если автосохранение не старше 1 часа
+				if (timeDiff < 3600000) {
+					if (confirm('Найдено автосохранение. Восстановить данные?')) {
+						document.getElementById('broadcastName').value = data.name || ''
+						document.getElementById('messageTextArea').value =
+							data.message_text || ''
+
+						// Восстанавливаем тип аудитории
+						const targetRadio = document.querySelector(
+							`input[name="target_audience"][value="${data.target_type}"]`
+						)
+						if (targetRadio) {
+							targetRadio.checked = true
+						}
+
+						updatePreview()
+						updateCharCount()
+					}
+				}
+			} catch (error) {
+				console.error('Ошибка восстановления автосохранения:', error)
+			}
+		}
+	}
+</script>
+{% endblock %}

@@ -1732,9 +1732,27 @@ class UniversalDatabase:
                     if status in delivery_stats:
                         delivery_stats[status] = count
 
+            # Подсчитываем общее количество получателей
+            total_recipients = sum(delivery_stats.values())
+
+            # Если нет логов доставки, берем из основной таблицы
+            if total_recipients == 0:
+                sent_count = broadcast.get('sent_count', 0) or 0
+                failed_count = broadcast.get('failed_count', 0) or 0
+                total_recipients = sent_count + failed_count
+
+                # Обновляем статистику доставки из основной таблицы
+                delivery_stats['sent'] = sent_count
+                delivery_stats['failed'] = failed_count
+
             return {
                 'broadcast': broadcast,
-                'delivery_stats': delivery_stats
+                'delivery_stats': delivery_stats,
+                'total_recipients': total_recipients,
+                'sent': delivery_stats.get('sent', 0),
+                'delivered': delivery_stats.get('delivered', 0),
+                'failed': delivery_stats.get('failed', 0),
+                'blocked': delivery_stats.get('blocked', 0)
             }
 
         except Exception as e:
