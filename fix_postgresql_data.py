@@ -91,24 +91,31 @@ class PostgreSQLDataFixer:
     async def check_users_data(self):
         """Проверить данные пользователей"""
         logger.info("👥 Проверяем данные пользователей...")
-        
+
         # Подсчитываем пользователей
         users_count = await self.db.get_users_count()
         logger.info(f"Всего пользователей: {users_count}")
-        
+
         # Подсчитываем подписчиков
         subscribers_count = await self.db.get_subscribers_count()
         logger.info(f"Активных подписчиков: {subscribers_count}")
-        
+
+        # Переподключаемся к базе для следующего запроса
+        await self.db.adapter.connect()
+
         # Проверяем структуру данных пользователей
         sample_user = await self.db.adapter.fetch_one("""
             SELECT user_id, username, is_subscribed, subscription_active, created_at
-            FROM users 
+            FROM users
             LIMIT 1
         """)
-        
+
         if sample_user:
             logger.info(f"Пример пользователя: {dict(sample_user)}")
+            # Проверяем размер user_id
+            user_id = sample_user.get('user_id')
+            if user_id and user_id > 2147483647:  # int32 max
+                logger.warning(f"⚠️ user_id {user_id} превышает int32 лимит PostgreSQL!")
         else:
             logger.warning("⚠️ Пользователи не найдены")
             
