@@ -531,7 +531,9 @@ class ProductionDatabaseManager:
                 }
             }
         except Exception as e:
+            import traceback
             logger.error(f"Ошибка получения пользователей: {e}")
+            logger.error(f"Полная ошибка: {traceback.format_exc()}")
             return {"users": [], "total": 0, "page": page, "per_page": per_page, "pagination": {}}
 
     async def get_broadcasts_paginated(self, page: int = 1, per_page: int = 20) -> Dict[str, Any]:
@@ -586,7 +588,9 @@ class ProductionDatabaseManager:
                 }
             }
         except Exception as e:
+            import traceback
             logger.error(f"Ошибка получения рассылок: {e}")
+            logger.error(f"Полная ошибка: {traceback.format_exc()}")
             return {"broadcasts": [], "total": 0, "page": page, "per_page": per_page, "pagination": {}}
 
     async def get_broadcasts_stats(self) -> Dict[str, Any]:
@@ -616,6 +620,142 @@ class ProductionDatabaseManager:
         except Exception as e:
             logger.error(f"Ошибка получения статистики рассылок: {e}")
             return {"total": 0, "by_status": {}}
+
+    async def get_stats(self) -> Dict[str, Any]:
+        """Получить общую статистику"""
+        try:
+            adapter = DatabaseAdapter(self.database_url)
+            await adapter.connect()
+
+            stats = {}
+
+            # Общее количество пользователей
+            total_users_result = await adapter.fetch_one("SELECT COUNT(*) FROM users")
+            stats['total_users'] = total_users_result[0] if total_users_result else 0
+
+            # Активные подписчики
+            if adapter.db_type == 'sqlite':
+                active_subs_query = """
+                    SELECT COUNT(*) FROM users
+                    WHERE is_subscribed = 1
+                    AND (subscription_end IS NULL OR subscription_end > datetime('now'))
+                """
+            else:  # PostgreSQL
+                active_subs_query = """
+                    SELECT COUNT(*) FROM users
+                    WHERE is_subscribed = TRUE
+                    AND (subscription_end IS NULL OR subscription_end > NOW())
+                """
+
+            active_subs_result = await adapter.fetch_one(active_subs_query)
+            stats['active_subscribers'] = active_subs_result[0] if active_subs_result else 0
+
+            # Запросы за сегодня
+            if adapter.db_type == 'sqlite':
+                requests_today_query = """
+                    SELECT COUNT(*) FROM requests
+                    WHERE created_at >= date('now')
+                """
+            else:  # PostgreSQL
+                requests_today_query = """
+                    SELECT COUNT(*) FROM requests
+                    WHERE created_at >= CURRENT_DATE
+                """
+
+            requests_today_result = await adapter.fetch_one(requests_today_query)
+            stats['requests_today'] = requests_today_result[0] if requests_today_result else 0
+
+            await adapter.disconnect()
+            return stats
+
+        except Exception as e:
+            import traceback
+            logger.error(f"Ошибка получения статистики: {e}")
+            logger.error(f"Полная ошибка: {traceback.format_exc()}")
+            try:
+                await adapter.disconnect()
+            except:
+                pass
+            return {'total_users': 0, 'active_subscribers': 0, 'requests_today': 0}
+
+    async def get_detailed_stats(self) -> Dict[str, Any]:
+        """Получить детальную статистику системы"""
+        try:
+            adapter = DatabaseAdapter(self.database_url)
+            await adapter.connect()
+
+            # Статистика пользователей
+            users_total_query = "SELECT COUNT(*) FROM users"
+            users_total_result = await adapter.fetch_one(users_total_query)
+            users_total = users_total_result[0] if users_total_result else 0
+
+            users_active_query = "SELECT COUNT(*) FROM users WHERE blocked = FALSE AND bot_blocked = FALSE"
+            users_active_result = await adapter.fetch_one(users_active_query)
+            users_active = users_active_result[0] if users_active_result else 0
+
+            if adapter.db_type == 'sqlite':
+                users_subscribed_query = "SELECT COUNT(*) FROM users WHERE is_subscribed = 1 AND (subscription_end IS NULL OR subscription_end > datetime('now'))"
+            else:  # PostgreSQL
+                users_subscribed_query = "SELECT COUNT(*) FROM users WHERE is_subscribed = TRUE AND (subscription_end IS NULL OR subscription_end > NOW())"
+
+            users_subscribed_result = await adapter.fetch_one(users_subscribed_query)
+            users_subscribed = users_subscribed_result[0] if users_subscribed_result else 0
+
+            # Статистика запросов
+            requests_total_query = "SELECT COUNT(*) FROM requests"
+            requests_total_result = await adapter.fetch_one(requests_total_query)
+            requests_total = requests_total_result[0] if requests_total_result else 0
+
+            # Статистика платежей
+            payments_total_query = "SELECT COUNT(*) FROM payments"
+            payments_total_result = await adapter.fetch_one(payments_total_query)
+            payments_total = payments_total_result[0] if payments_total_result else 0
+
+            payments_completed_query = "SELECT COUNT(*) FROM payments WHERE status = 'completed'"
+            payments_completed_result = await adapter.fetch_one(payments_completed_query)
+            payments_completed = payments_completed_result[0] if payments_completed_result else 0
+
+            # Статистика рассылок
+            broadcasts_total_query = "SELECT COUNT(*) FROM broadcasts"
+            broadcasts_total_result = await adapter.fetch_one(broadcasts_total_query)
+            broadcasts_total = broadcasts_total_result[0] if broadcasts_total_result else 0
+
+            await adapter.disconnect()
+
+            return {
+                'users': {
+                    'total': users_total,
+                    'active': users_active,
+                    'subscribed': users_subscribed,
+                    'blocked': users_total - users_active
+                },
+                'requests': {
+                    'total': requests_total
+                },
+                'payments': {
+                    'total': payments_total,
+                    'completed': payments_completed,
+                    'pending': payments_total - payments_completed
+                },
+                'broadcasts': {
+                    'total': broadcasts_total
+                }
+            }
+
+        except Exception as e:
+            import traceback
+            logger.error(f"Ошибка получения детальной статистики: {e}")
+            logger.error(f"Полная ошибка: {traceback.format_exc()}")
+            try:
+                await adapter.disconnect()
+            except:
+                pass
+            return {
+                'users': {'total': 0, 'active': 0, 'subscribed': 0, 'blocked': 0},
+                'requests': {'total': 0},
+                'payments': {'total': 0, 'completed': 0, 'pending': 0},
+                'broadcasts': {'total': 0}
+            }
 
 
 # Глобальный экземпляр менеджера
