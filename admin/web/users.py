@@ -24,7 +24,7 @@ async def require_auth(current_user: Optional[TokenData] = Depends(get_current_u
     return current_user
 
 
-async def get_db(request: Request) -> Database:
+async def get_db(request: Request) -> UniversalDatabase:
     """Получить объект базы данных"""
     return request.state.db
 

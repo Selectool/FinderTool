@@ -30,7 +30,7 @@ except ImportError:
     )
 from database.universal_database import UniversalDatabase
 
-# Инициализируем метод get_user_permissions в классе Database
+# Инициализируем метод get_user_permissions в классе UniversalDatabase
 add_get_user_permissions_method()
 
 router = APIRouter()
@@ -52,7 +52,7 @@ class BroadcastCreateRequest(BaseModel):
     parse_mode: str = "HTML"
 
 
-async def get_db(request: Request) -> Database:
+async def get_db(request: Request) -> UniversalDatabase:
     """Получить объект базы данных"""
     return request.state.db
 

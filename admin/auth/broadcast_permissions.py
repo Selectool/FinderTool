@@ -313,7 +313,7 @@ async def get_user_permissions(db: UniversalDatabase, user_id: int) -> list:
             pass
 
 
-# Добавляем метод в класс Database
+# Добавляем метод в класс UniversalDatabase
 def add_get_user_permissions_method():
     """Добавить метод get_user_permissions в класс UniversalDatabase"""
 

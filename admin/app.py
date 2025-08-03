@@ -241,7 +241,7 @@ try:
 except ImportError:
     from admin.web import auth as web_auth, dashboard, users as web_users, broadcasts as web_broadcasts, payment_cleanup as web_payment_cleanup
 
-# Добавляем метод get_user_permissions в класс Database
+# Добавляем метод get_user_permissions в класс UniversalDatabase
 add_get_user_permissions_method()
 
 app.include_router(web_auth.router, prefix="/auth", tags=["web-auth"])

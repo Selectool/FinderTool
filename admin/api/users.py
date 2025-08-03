@@ -40,7 +40,7 @@ async def get_users(
 ):
     """Получить список пользователей с фильтрацией и пагинацией"""
 
-    # Преобразуем filter_type в строку для совместимости с Database
+    # Преобразуем filter_type в строку для совместимости с UniversalDatabase
     filter_str = None
     if filter_type:
         if filter_type == UserFilterType.subscribed:
