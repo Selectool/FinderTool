@@ -1617,10 +1617,18 @@ class UniversalDatabase:
 
             if status_results:
                 for row in status_results:
-                    status = row[0] if hasattr(row, '__getitem__') else row.status
-                    count = row[1] if hasattr(row, '__getitem__') else row.count
-                    if status in stats:
-                        stats[status] = count
+                    if isinstance(row, dict):
+                        status = row.get('status')
+                        count = row.get('count', 0)
+                    elif hasattr(row, '__getitem__'):
+                        status = row[0]
+                        count = self._extract_count({'count': row[1]}) if isinstance(row[1], (int, str)) else row[1]
+                    else:
+                        status = getattr(row, 'status', None)
+                        count = getattr(row, 'count', 0)
+
+                    if status and status in stats:
+                        stats[status] = int(count)
 
             return stats
 

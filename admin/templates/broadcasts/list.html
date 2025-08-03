@@ -291,17 +291,21 @@ block extra_head %}
 		</div>
 
 		<!-- Пагинация -->
-		{% if pagination and pagination.pages > 1 %}
+		{% set total_pages = pagination.total_pages if pagination.total_pages else
+		pagination['total_pages'] %} {% if pagination and total_pages > 1 %}
 		<nav aria-label="Пагинация рассылок">
 			<ul class="pagination justify-content-center">
-				{% if pagination.has_prev %}
+				{% set has_prev = pagination.has_prev if pagination.has_prev else
+				pagination['has_prev'] %} {% if has_prev %}
 				<li class="page-item">
-					<a class="page-link" href="?page={{ pagination.prev_num }}"
-						>Предыдущая</a
-					>
+					{% set prev_page = pagination.prev_page if pagination.prev_page else
+					pagination['prev_page'] %}
+					<a class="page-link" href="?page={{ prev_page }}">Предыдущая</a>
 				</li>
-				{% endif %} {% for page_num in pagination.iter_pages() %} {% if page_num
-				%} {% if page_num != pagination.page %}
+				{% endif %} {% set current_page = pagination.current_page if
+				pagination.current_page else pagination['current_page'] %} {% for
+				page_num in range(1, total_pages + 1) %} {% if page_num != current_page
+				%}
 				<li class="page-item">
 					<a class="page-link" href="?page={{ page_num }}">{{ page_num }}</a>
 				</li>
@@ -309,15 +313,12 @@ block extra_head %}
 				<li class="page-item active">
 					<span class="page-link">{{ page_num }}</span>
 				</li>
-				{% endif %} {% else %}
-				<li class="page-item disabled">
-					<span class="page-link">…</span>
-				</li>
-				{% endif %} {% endfor %} {% if pagination.has_next %}
+				{% endif %} {% endfor %} {% set has_next = pagination.has_next if
+				pagination.has_next else pagination['has_next'] %} {% if has_next %}
 				<li class="page-item">
-					<a class="page-link" href="?page={{ pagination.next_num }}"
-						>Следующая</a
-					>
+					{% set next_page = pagination.next_page if pagination.next_page else
+					pagination['next_page'] %}
+					<a class="page-link" href="?page={{ next_page }}">Следующая</a>
 				</li>
 				{% endif %}
 			</ul>
