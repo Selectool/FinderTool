@@ -663,7 +663,15 @@ class UniversalDatabase:
                 'total': total,
                 'page': page,
                 'per_page': per_page,
-                'pages': (total + per_page - 1) // per_page if total > 0 else 1
+                'pages': (total + per_page - 1) // per_page if total > 0 else 1,
+                'pagination': {
+                    'current_page': page,
+                    'total_pages': (total + per_page - 1) // per_page if total > 0 else 1,
+                    'has_prev': page > 1,
+                    'has_next': page * per_page < total,
+                    'prev_page': page - 1 if page > 1 else None,
+                    'next_page': page + 1 if page * per_page < total else None
+                }
             }
 
         except Exception as e:
@@ -677,7 +685,15 @@ class UniversalDatabase:
                 'total': 0,
                 'page': page,
                 'per_page': per_page,
-                'pages': 1
+                'pages': 1,
+                'pagination': {
+                    'current_page': page,
+                    'total_pages': 1,
+                    'has_prev': False,
+                    'has_next': False,
+                    'prev_page': None,
+                    'next_page': None
+                }
             }
 
     # ========== МЕТОДЫ ДЛЯ АДМИН-ПАНЕЛИ ==========

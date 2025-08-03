@@ -199,22 +199,29 @@ DEFAULT_ROLE_PERMISSIONS = {
 async def init_broadcast_permissions(db: UniversalDatabase):
     """Инициализировать права доступа для рассылок"""
     try:
-        import aiosqlite
+        await db.adapter.connect()
 
         # Проверяем, существует ли уже таблица
-        async with aiosqlite.connect(db.db_path) as conn:
-            cursor = await conn.execute("""
+        if db.adapter.db_type == 'sqlite':
+            check_query = """
                 SELECT name FROM sqlite_master
                 WHERE type='table' AND name='user_permissions'
-            """)
-            table_exists = await cursor.fetchone()
+            """
+        else:  # PostgreSQL
+            check_query = """
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'user_permissions'
+            """
 
-            if table_exists:
-                # Таблица уже существует, пропускаем инициализацию
-                return
+        table_exists = await db.adapter.fetch_one(check_query)
 
-            # Создаем таблицу прав доступа
-            await conn.execute("""
+        if table_exists:
+            # Таблица уже существует, пропускаем инициализацию
+            return
+
+        # Создаем таблицу прав доступа
+        if db.adapter.db_type == 'sqlite':
+            create_query = """
                 CREATE TABLE IF NOT EXISTS user_permissions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
@@ -225,19 +232,40 @@ async def init_broadcast_permissions(db: UniversalDatabase):
                     FOREIGN KEY (granted_by) REFERENCES admin_users (id),
                     UNIQUE(user_id, permission)
                 )
-            """)
-
-            # Создаем индекс для быстрого поиска
-            await conn.execute("""
+            """
+            index_query = """
                 CREATE INDEX IF NOT EXISTS idx_user_permissions_user_id
                 ON user_permissions (user_id)
-            """)
+            """
+        else:  # PostgreSQL
+            create_query = """
+                CREATE TABLE IF NOT EXISTS user_permissions (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    permission TEXT NOT NULL,
+                    granted_by INTEGER,
+                    granted_at TIMESTAMP DEFAULT NOW(),
+                    FOREIGN KEY (user_id) REFERENCES admin_users (id),
+                    FOREIGN KEY (granted_by) REFERENCES admin_users (id),
+                    UNIQUE(user_id, permission)
+                )
+            """
+            index_query = """
+                CREATE INDEX IF NOT EXISTS idx_user_permissions_user_id
+                ON user_permissions (user_id)
+            """
 
-            await conn.commit()
-            print("Система прав доступа для рассылок инициализирована")
+        await db.adapter.execute(create_query)
+        await db.adapter.execute(index_query)
+        print("Система прав доступа для рассылок инициализирована")
 
     except Exception as e:
         print(f"Ошибка инициализации прав доступа: {e}")
+    finally:
+        try:
+            await db.adapter.disconnect()
+        except:
+            pass
 
 
 async def grant_permissions_to_user(db: UniversalDatabase, user_id: int, permissions: list, granted_by: int = None):
