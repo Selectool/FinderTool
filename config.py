@@ -8,7 +8,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Telegram Bot API
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8066350716:AAHEDXC0kL_L-TXui8vxI0HhD0wchIzl1hI")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN не найден в переменных окружения! Добавьте его в .env файл")
 
 # Telegram API для Telethon
 API_ID = int(os.getenv("API_ID", "0"))

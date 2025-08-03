@@ -9,18 +9,31 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, Union
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File, Form, Request
 from pydantic import BaseModel
 import httpx
 
 from database.universal_database import UniversalDatabase
-from admin.dependencies import get_db, require_auth, RequireBroadcastSend
-from admin.auth import TokenData
+
+# Импорты для зависимостей
+try:
+    from ..auth.permissions import RequireBroadcastSend, get_current_active_user
+    from ..auth.models import TokenData
+except ImportError:
+    from admin.auth.permissions import RequireBroadcastSend, get_current_active_user
+    from admin.auth.models import TokenData
+
+# Функция для получения базы данных
+async def get_db(request: Request) -> UniversalDatabase:
+    """Получить объект базы данных"""
+    return request.state.db
 
 logger = logging.getLogger(__name__)
 
 # Токен бота - получаем из переменных окружения
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8066350716:AAHEDXC0kL_L-TXui8vxI0HhD0wchIzl1hI")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN не найден в переменных окружения! Добавьте его в .env файл")
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # Настройки медиафайлов

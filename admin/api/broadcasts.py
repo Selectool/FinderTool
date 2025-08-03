@@ -38,7 +38,9 @@ logger = logging.getLogger(__name__)
 
 # Токен бота - получаем из переменных окружения
 import os
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8066350716:AAHEDXC0kL_L-TXui8vxI0HhD0wchIzl1hI")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN не найден в переменных окружения! Добавьте его в .env файл")
 
 class BroadcastCreateRequest(BaseModel):
     title: str
