@@ -413,13 +413,23 @@ class UnifiedService:
 
             while self.running and restart_count < max_restarts:
                 try:
+                    # Подготавливаем переменные окружения для админ-панели
+                    admin_env = os.environ.copy()
+                    admin_env.update({
+                        "ADMIN_HOST": "0.0.0.0",  # Принудительно устанавливаем для внешнего доступа
+                        "ADMIN_PORT": "8080",
+                        "ADMIN_DEBUG": "False",
+                        "ENVIRONMENT": "production"
+                    })
+
                     # Запускаем админ-панель как subprocess
                     self.admin_process = subprocess.Popen(
                         [sys.executable, "run_admin.py"],
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         text=True,
-                        cwd=os.getcwd()
+                        cwd=os.getcwd(),
+                        env=admin_env
                     )
 
                     logger.info(f"✅ Админ-панель запущена (PID: {self.admin_process.pid})")
