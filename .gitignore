@@ -55,6 +55,7 @@ clean_test_payments.py
 *password*
 *credentials*
 !requirements.txt
+!bot/keyboards/
 
 # ============ DATABASE ============
 *.db
@@ -135,6 +136,7 @@ RAILWAY_DEPLOYMENT.md
 DOKPLOY_SETUP.md
 DOKPLOY_PRODUCTION_CONFIG.md
 POSTGRESQL_MIGRATION_REPORT.md
+INSTALLATION_GUIDE.md
 docs/
 backups/
 
@@ -224,3 +226,6 @@ admin/cache/
 services/test_*
 services/dev_*
 
+DOKPLOY_DEPLOYMENT_GUIDE.md
+PRODUCTION_DEPLOYMENT_SUMMARY.md
+RAILPACK_UNIFIED_DEPLOYMENT.md
