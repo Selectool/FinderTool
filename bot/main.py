@@ -21,7 +21,7 @@ from database.production_manager import init_production_database, db_manager
 from database.db_adapter import set_database
 from bot.middlewares.database import DatabaseMiddleware
 from bot.middlewares.role_middleware import RoleMiddleware
-from bot.handlers import basic, channels, subscription, admin, reply_menu
+# Импорты обработчиков будут в функции setup_bot
 
 # Настройка production логирования
 from bot.utils.production_logger import setup_production_logging
@@ -67,12 +67,21 @@ async def setup_bot():
     dp.message.middleware(RoleMiddleware())
     dp.callback_query.middleware(RoleMiddleware())
     
-    # Регистрируем обработчики
-    basic.register_handlers(dp)
-    channels.register_handlers(dp)
-    subscription.register_handlers(dp)
-    admin.register_handlers(dp)
-    reply_menu.register_handlers(dp)
+    # Регистрируем обработчики через роутеры
+    try:
+        # Используем централизованную регистрацию
+        from bot.handlers.register import register_handlers
+        register_handlers(dp)
+    except ImportError:
+        # Fallback - регистрируем роутеры напрямую
+        logger.warning("⚠️ Используем fallback регистрацию роутеров")
+        from bot.handlers import basic, channels, subscription, admin, reply_menu
+
+        dp.include_router(admin.router)  # Админ роутер первым для FSM
+        dp.include_router(reply_menu.router)  # Reply клавиатура
+        dp.include_router(basic.router)
+        dp.include_router(channels.router)
+        dp.include_router(subscription.router)
     
     logger.info("✅ Telegram бот настроен")
     return bot, dp
