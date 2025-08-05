@@ -202,9 +202,9 @@ async def main():
         elif IS_PRODUCTION:
             logger.info("🏥 Health check модули недоступны, пропускаем проверку")
 
-        # Запуск polling
+        # Запуск polling с пропуском старых обновлений
         logger.info("🚀 Запуск polling...")
-        await dp.start_polling(bot)
+        await dp.start_polling(bot, skip_updates=True)
 
     except Exception as e:
         logger.error(f"❌ Критическая ошибка при запуске бота: {e}")
