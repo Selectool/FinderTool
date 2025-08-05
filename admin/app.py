@@ -19,7 +19,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     from .config import (
         DEBUG, HOST, PORT, CORS_ORIGINS, ALLOWED_HOSTS,
-        LOG_LEVEL, UPLOAD_DIR
+        LOG_LEVEL, UPLOAD_DIR, ENVIRONMENT
     )
     from config import DATABASE_URL
 except ImportError:
@@ -27,6 +27,9 @@ except ImportError:
         DEBUG, HOST, PORT, CORS_ORIGINS, ALLOWED_HOSTS,
         LOG_LEVEL, UPLOAD_DIR, DATABASE_URL
     )
+    # Безопасный fallback для ENVIRONMENT
+    import os
+    ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 
 # Импорты для админ-панели
 try:

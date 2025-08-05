@@ -20,6 +20,16 @@ def get_environment():
     except Exception:
         return "production"
 
+# Глобальная переменная для кэширования
+_ENVIRONMENT_CACHE = None
+
+def get_cached_environment():
+    """Получить кэшированную переменную окружения"""
+    global _ENVIRONMENT_CACHE
+    if _ENVIRONMENT_CACHE is None:
+        _ENVIRONMENT_CACHE = get_environment()
+    return _ENVIRONMENT_CACHE
+
 logger = logging.getLogger(__name__)
 
 class DatabaseConnectionMiddleware(BaseHTTPMiddleware):
@@ -111,17 +121,26 @@ class DatabaseConnectionMiddleware(BaseHTTPMiddleware):
     async def _handle_database_error(self, error: Exception):
         """Обработка ошибок базы данных"""
         current_time = time.time()
-        
+
         # Увеличиваем счетчик ошибок
         self.connection_errors += 1
         self.last_error_time = current_time
-        
-        # Логируем ошибку
-        logger.error(f"❌ Ошибка базы данных #{self.connection_errors}: {error}")
-        
+
+        # Безопасное логирование ошибки
+        try:
+            logger.error(f"❌ Ошибка базы данных #{self.connection_errors}: {error}")
+        except Exception as log_error:
+            # Если даже логирование не работает, используем print
+            print(f"❌ Ошибка базы данных #{self.connection_errors}: {error}")
+            print(f"❌ Ошибка логирования: {log_error}")
+
         # Если слишком много ошибок, сбрасываем соединение
         if self.connection_errors >= self.max_connection_errors:
-            logger.error(f"🚨 Критическое количество ошибок БД ({self.connection_errors}), сброс соединения")
+            try:
+                logger.error(f"🚨 Критическое количество ошибок БД ({self.connection_errors}), сброс соединения")
+            except:
+                print(f"🚨 Критическое количество ошибок БД ({self.connection_errors}), сброс соединения")
+
             if self.db_instance:
                 try:
                     await self.db_instance.adapter.disconnect()
