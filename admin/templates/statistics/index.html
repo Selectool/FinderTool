@@ -1,5 +1,7 @@
 {% extends "base.html" %} {% block title %}Детальная статистика{% endblock %} {%
 block extra_head %}
+<!-- Lucide Icons -->
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 <style>
 	.stats-card {
 		border: none;
@@ -102,6 +104,36 @@ block extra_head %}
 		font-size: 0.8rem;
 		display: none;
 	}
+
+	/* Lucide иконки стили */
+	.lucide-icon {
+		width: 1em;
+		height: 1em;
+		display: inline-block;
+		vertical-align: middle;
+	}
+
+	.lucide-3x {
+		width: 3em;
+		height: 3em;
+	}
+
+	.lucide-spin {
+		animation: lucide-spin 1s linear infinite;
+	}
+
+	@keyframes lucide-spin {
+		from {
+			transform: rotate(0deg);
+		}
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	.me-2 {
+		margin-right: 0.5rem;
+	}
 </style>
 {% endblock %} {% block content %}
 <div class="container-fluid">
@@ -116,13 +148,13 @@ block extra_head %}
 				class="btn btn-outline-primary btn-sm me-2"
 				onclick="refreshStats()"
 			>
-				<i class="fas fa-sync-alt"></i> Обновить
+				<i data-lucide="refresh-cw" class="lucide-icon"></i> Обновить
 			</button>
 			<button
 				class="btn btn-outline-secondary btn-sm"
 				onclick="toggleAutoRefresh()"
 			>
-				<i class="fas fa-clock"></i>
+				<i data-lucide="clock" class="lucide-icon"></i>
 				<span id="autoRefreshText">Авто-обновление</span>
 			</button>
 		</div>
@@ -130,7 +162,8 @@ block extra_head %}
 
 	<!-- Индикатор автообновления -->
 	<div id="autoRefreshIndicator" class="auto-refresh-indicator">
-		<i class="fas fa-sync-alt fa-spin"></i> Обновление данных...
+		<i data-lucide="loader" class="lucide-icon lucide-spin"></i> Обновление
+		данных...
 	</div>
 
 	<!-- Основные метрики -->
@@ -141,7 +174,8 @@ block extra_head %}
 					<div class="metric-value">{{ overview.total_users }}</div>
 					<div class="metric-label">Всего пользователей</div>
 					<small class="d-block mt-2">
-						<i class="fas fa-arrow-up"></i> +{{ users.new_today }} сегодня
+						<i data-lucide="trending-up" class="lucide-icon"></i> +{{
+						users.new_today }} сегодня
 					</small>
 				</div>
 			</div>
@@ -164,7 +198,8 @@ block extra_head %}
 					<div class="metric-value">{{ overview.total_requests }}</div>
 					<div class="metric-label">Всего запросов</div>
 					<small class="d-block mt-2">
-						<i class="fas fa-arrow-up"></i> +{{ requests.today }} сегодня
+						<i data-lucide="trending-up" class="lucide-icon"></i> +{{
+						requests.today }} сегодня
 					</small>
 				</div>
 			</div>
@@ -175,8 +210,8 @@ block extra_head %}
 					<div class="metric-value">{{ payments.total.amount }}₽</div>
 					<div class="metric-label">Общий доход</div>
 					<small class="d-block mt-2">
-						<i class="fas fa-arrow-up"></i> +{{ payments.today.amount }}₽
-						сегодня
+						<i data-lucide="trending-up" class="lucide-icon"></i> +{{
+						payments.today.amount }}₽ сегодня
 					</small>
 				</div>
 			</div>
@@ -189,7 +224,7 @@ block extra_head %}
 			<div class="card stats-card">
 				<div class="card-header">
 					<h5 class="section-header mb-0">
-						<i class="fas fa-users me-2"></i>Пользователи
+						<i data-lucide="users" class="lucide-icon me-2"></i>Пользователи
 					</h5>
 				</div>
 				<div class="card-body">
@@ -224,7 +259,7 @@ block extra_head %}
 					</div>
 					{% if users.blocked > 0 %}
 					<div class="alert alert-warning mt-3 mb-0">
-						<i class="fas fa-exclamation-triangle me-2"></i>
+						<i data-lucide="alert-triangle" class="lucide-icon me-2"></i>
 						Заблокированных пользователей: {{ users.blocked }}
 					</div>
 					{% endif %}
@@ -236,7 +271,7 @@ block extra_head %}
 			<div class="card stats-card">
 				<div class="card-header">
 					<h5 class="section-header mb-0">
-						<i class="fas fa-search me-2"></i>Запросы
+						<i data-lucide="search" class="lucide-icon me-2"></i>Запросы
 					</h5>
 				</div>
 				<div class="card-body">
@@ -278,7 +313,8 @@ block extra_head %}
 			<div class="card stats-card">
 				<div class="card-header">
 					<h5 class="section-header mb-0">
-						<i class="fas fa-credit-card me-2"></i>Платежи и доходы
+						<i data-lucide="credit-card" class="lucide-icon me-2"></i>Платежи и
+						доходы
 					</h5>
 				</div>
 				<div class="card-body">
@@ -389,7 +425,8 @@ block extra_head %}
 			<div class="card stats-card">
 				<div class="card-header">
 					<h5 class="section-header mb-0">
-						<i class="fas fa-trophy me-2"></i>Топ пользователи
+						<i data-lucide="trophy" class="lucide-icon me-2"></i>Топ
+						пользователи
 					</h5>
 				</div>
 				<div class="card-body">
@@ -450,7 +487,10 @@ block extra_head %}
 					</div>
 					{% else %}
 					<div class="text-center py-4">
-						<i class="fas fa-users fa-3x text-muted mb-3"></i>
+						<i
+							data-lucide="users"
+							class="lucide-icon lucide-3x text-muted mb-3"
+						></i>
 						<p class="text-muted">Нет данных о пользователях</p>
 					</div>
 					{% endif %}
@@ -462,7 +502,7 @@ block extra_head %}
 			<div class="card stats-card">
 				<div class="card-header">
 					<h5 class="section-header mb-0">
-						<i class="fas fa-cog me-2"></i>Система
+						<i data-lucide="settings" class="lucide-icon me-2"></i>Система
 					</h5>
 				</div>
 				<div class="card-body">
@@ -528,7 +568,7 @@ block extra_head %}
 			<div class="card stats-card mt-3">
 				<div class="card-header">
 					<h5 class="section-header mb-0">
-						<i class="fas fa-bullhorn me-2"></i>Рассылки
+						<i data-lucide="megaphone" class="lucide-icon me-2"></i>Рассылки
 					</h5>
 				</div>
 				<div class="card-body">
@@ -575,7 +615,8 @@ block extra_head %}
 			<div class="card stats-card">
 				<div class="card-header">
 					<h5 class="section-header mb-0">
-						<i class="fas fa-chart-bar me-2"></i>Дополнительные метрики
+						<i data-lucide="bar-chart" class="lucide-icon me-2"></i
+						>Дополнительные метрики
 					</h5>
 				</div>
 				<div class="card-body">
@@ -625,7 +666,7 @@ block extra_head %}
 	onclick="refreshStats()"
 	title="Обновить статистику"
 >
-	<i class="fas fa-sync-alt"></i>
+	<i data-lucide="refresh-cw" class="lucide-icon"></i>
 </button>
 
 <script>
@@ -694,5 +735,10 @@ block extra_head %}
 	window.addEventListener('error', function (e) {
 		console.error('JavaScript ошибка:', e.error)
 	})
+
+	// Инициализация Lucide иконок
+	if (typeof lucide !== 'undefined') {
+		lucide.createIcons()
+	}
 </script>
 {% endblock %}

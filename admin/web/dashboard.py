@@ -54,11 +54,11 @@ async def dashboard(
             "current_user": current_user,
             "page_title": "Dashboard",
 
-            # Основные метрики
+            # Основные метрики (ИСПРАВЛЕНО: правильные имена переменных для шаблона)
             "total_users": detailed_stats.get('total_users', 0),
             "active_subscriptions": detailed_stats.get('active_subscribers', 0),
-            "search_requests": detailed_stats.get('total_requests', 0),
-            "monthly_revenue": detailed_stats.get('revenue_month', 0),
+            "total_searches": detailed_stats.get('total_requests', 0),  # Исправлено: было search_requests
+            "revenue": detailed_stats.get('revenue_month', 0),  # Исправлено: было monthly_revenue
 
             # Сегодняшние метрики
             "today_users": detailed_stats.get('new_users_today', 0),
@@ -110,11 +110,11 @@ async def dashboard(
             "current_user": current_user,
             "page_title": "Dashboard",
 
-            # Все метрики = 0
+            # Все метрики = 0 (ИСПРАВЛЕНО: правильные имена переменных)
             "total_users": 0,
             "active_subscriptions": 0,
-            "search_requests": 0,
-            "monthly_revenue": 0,
+            "total_searches": 0,  # Исправлено: было search_requests
+            "revenue": 0,  # Исправлено: было monthly_revenue
             "today_users": 0,
             "today_searches": 0,
             "today_subscriptions": 0,

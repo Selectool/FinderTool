@@ -598,30 +598,96 @@ class StatisticsService:
             })
 
     async def _add_top_users(self, stats: Dict[str, Any]):
-        """Добавить топ пользователей"""
+        """
+        Добавить топ пользователей с информацией о последней активности
+        ИСПРАВЛЕНО: Добавлена последняя активность пользователей
+        """
         try:
+            # Получаем топ пользователей с последней активностью из запросов
             result = await self.db.adapter.fetch_all("""
-                SELECT user_id, username, first_name, last_name, requests_used
-                FROM users
-                WHERE requests_used > 0
-                ORDER BY requests_used DESC
+                SELECT
+                    u.user_id,
+                    u.username,
+                    u.first_name,
+                    u.last_name,
+                    u.requests_used,
+                    u.is_subscribed,
+                    u.subscription_end,
+                    COALESCE(MAX(r.created_at), u.created_at) as last_activity
+                FROM users u
+                LEFT JOIN requests r ON u.user_id = r.user_id
+                WHERE u.requests_used > 0
+                GROUP BY u.user_id, u.username, u.first_name, u.last_name, u.requests_used, u.is_subscribed, u.subscription_end, u.created_at
+                ORDER BY u.requests_used DESC, last_activity DESC
                 LIMIT 10
             """)
 
             top_users = []
             for row in result:
                 if isinstance(row, dict):
-                    top_users.append(row)
+                    user_data = row.copy()
+                    # Форматируем дату последней активности
+                    if user_data.get('last_activity'):
+                        if isinstance(user_data['last_activity'], str):
+                            try:
+                                from datetime import datetime
+                                last_activity = datetime.fromisoformat(user_data['last_activity'].replace('Z', '+00:00'))
+                                user_data['last_activity_formatted'] = last_activity.strftime('%d.%m.%Y %H:%M')
+                            except:
+                                user_data['last_activity_formatted'] = 'Неизвестно'
+                        else:
+                            user_data['last_activity_formatted'] = user_data['last_activity'].strftime('%d.%m.%Y %H:%M')
+                    else:
+                        user_data['last_activity_formatted'] = 'Неизвестно'
+
+                    # Определяем статус пользователя
+                    if user_data.get('is_subscribed'):
+                        user_data['status'] = 'Подписчик'
+                        user_data['status_class'] = 'success'
+                    else:
+                        user_data['status'] = 'Обычный'
+                        user_data['status_class'] = 'secondary'
+
+                    top_users.append(user_data)
                 else:
-                    top_users.append({
+                    # Обработка tuple результата
+                    user_data = {
                         'user_id': row[0],
                         'username': row[1],
                         'first_name': row[2],
                         'last_name': row[3],
-                        'requests_used': row[4]
-                    })
+                        'requests_used': row[4],
+                        'is_subscribed': row[5] if len(row) > 5 else False,
+                        'subscription_end': row[6] if len(row) > 6 else None,
+                        'last_activity': row[7] if len(row) > 7 else None
+                    }
+
+                    # Форматируем дату
+                    if user_data['last_activity']:
+                        try:
+                            if isinstance(user_data['last_activity'], str):
+                                from datetime import datetime
+                                last_activity = datetime.fromisoformat(user_data['last_activity'].replace('Z', '+00:00'))
+                            else:
+                                last_activity = user_data['last_activity']
+                            user_data['last_activity_formatted'] = last_activity.strftime('%d.%m.%Y %H:%M')
+                        except:
+                            user_data['last_activity_formatted'] = 'Неизвестно'
+                    else:
+                        user_data['last_activity_formatted'] = 'Неизвестно'
+
+                    # Статус
+                    if user_data['is_subscribed']:
+                        user_data['status'] = 'Подписчик'
+                        user_data['status_class'] = 'success'
+                    else:
+                        user_data['status'] = 'Обычный'
+                        user_data['status_class'] = 'secondary'
+
+                    top_users.append(user_data)
 
             stats['top_users'] = top_users
+            logger.info(f"Получено {len(top_users)} топ пользователей с активностью")
 
         except Exception as e:
             logger.error(f"Ошибка получения топ пользователей: {e}")
