@@ -163,10 +163,13 @@ async def update_broadcast_counters(db: UniversalDatabase, broadcast_id: int, se
 async def create_broadcast(
     request: BroadcastCreateRequest,
     background_tasks: BackgroundTasks,
+    current_user = Depends(RequireBroadcastCreate),
     db: UniversalDatabase = Depends(get_db)
 ) -> Dict[str, Any]:
     """Создать новую рассылку"""
     try:
+        logger.info(f"Создание рассылки пользователем {current_user.username}: {request.title}")
+
         # Валидация данных
         if not request.message_text.strip():
             raise HTTPException(status_code=400, detail="Текст сообщения не может быть пустым")
@@ -198,7 +201,7 @@ async def create_broadcast(
             message_text=request.message_text,
             parse_mode=request.parse_mode,
             target_users=request.target_type,
-            created_by=1,  # TODO: получать из текущего пользователя
+            created_by=current_user.user_id,
             scheduled_time=None if request.send_now else request.scheduled_time
         )
 

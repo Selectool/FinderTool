@@ -576,6 +576,47 @@ body {
 	}
 }
 
+/* Иконки действий в таблицах */
+.table-actions .btn {
+	margin: 0 2px;
+	min-width: 32px;
+	height: 32px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.table-actions .btn i {
+	font-size: 14px;
+}
+
+/* Fallback для иконок если FontAwesome не загрузился */
+.table-actions .btn:not(:has(i))::before {
+	font-family: 'Font Awesome 6 Free', 'Font Awesome 5 Free', sans-serif;
+	font-weight: 900;
+	font-size: 14px;
+}
+
+.btn-outline-primary:not(:has(i))::before {
+	content: '\f06e'; /* fa-eye */
+}
+
+.btn-outline-info:not(:has(i))::before {
+	content: '\f507'; /* fa-user-tag */
+}
+
+.btn-outline-success:not(:has(i))::before {
+	content: '\f09c'; /* fa-unlock */
+}
+
+.btn-outline-warning:not(:has(i))::before {
+	content: '\f05e'; /* fa-ban */
+}
+
+.btn-outline-danger:not(:has(i))::before {
+	content: '\f2ed'; /* fa-trash */
+}
+
 /* Responsive улучшения */
 @media (max-width: 768px) {
 	.main-content {
