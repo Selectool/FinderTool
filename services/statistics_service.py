@@ -330,51 +330,89 @@ class StatisticsService:
             logger.error(f"Ошибка получения статистики пользователей: {e}")
 
     async def _add_request_statistics(self, stats: Dict[str, Any]):
-        """Добавить статистику запросов"""
+        """
+        Добавить статистику запросов (ИСПРАВЛЕНО)
+        Production-ready подсчет с правильными временными интервалами
+        """
         try:
-            today = datetime.now().date()
-            week_ago = datetime.now() - timedelta(days=7)
-            month_ago = datetime.now() - timedelta(days=30)
+            # Точные временные границы
+            now = datetime.now()
+            today_start = datetime.combine(now.date(), datetime.min.time())
+            week_start = now - timedelta(days=7)
+
+            # Начало текущего месяца (правильный подсчет)
+            month_start = datetime(now.year, now.month, 1)
 
             if self.db.adapter.db_type == 'sqlite':
+                # Запросы сегодня
+                result = await self.db.adapter.fetch_one(
+                    "SELECT COUNT(*) FROM requests WHERE created_at >= ?", (today_start,)
+                )
+                stats['requests_today'] = self._extract_count(result)
+
                 # Запросы за неделю
                 result = await self.db.adapter.fetch_one(
-                    "SELECT COUNT(*) FROM requests WHERE created_at >= ?", (week_ago,)
+                    "SELECT COUNT(*) FROM requests WHERE created_at >= ?", (week_start,)
                 )
                 stats['requests_week'] = self._extract_count(result)
 
-                # Запросы за месяц
+                # Запросы за текущий месяц (с начала месяца)
                 result = await self.db.adapter.fetch_one(
-                    "SELECT COUNT(*) FROM requests WHERE created_at >= ?", (month_ago,)
+                    "SELECT COUNT(*) FROM requests WHERE created_at >= ?", (month_start,)
                 )
                 stats['requests_month'] = self._extract_count(result)
 
             else:  # PostgreSQL
+                # Запросы сегодня
+                result = await self.db.adapter.fetch_one(
+                    "SELECT COUNT(*) FROM requests WHERE created_at >= $1", (today_start,)
+                )
+                stats['requests_today'] = self._extract_count(result)
+
                 # Запросы за неделю
                 result = await self.db.adapter.fetch_one(
-                    "SELECT COUNT(*) FROM requests WHERE created_at >= $1", (week_ago,)
+                    "SELECT COUNT(*) FROM requests WHERE created_at >= $1", (week_start,)
                 )
                 stats['requests_week'] = self._extract_count(result)
 
-                # Запросы за месяц
+                # Запросы за текущий месяц (с начала месяца)
                 result = await self.db.adapter.fetch_one(
-                    "SELECT COUNT(*) FROM requests WHERE created_at >= $1", (month_ago,)
+                    "SELECT COUNT(*) FROM requests WHERE created_at >= $1", (month_start,)
                 )
                 stats['requests_month'] = self._extract_count(result)
 
-            # Общее количество запросов
+            # Общее количество запросов за все время
             result = await self.db.adapter.fetch_one("SELECT COUNT(*) FROM requests")
             stats['total_requests'] = self._extract_count(result)
 
+            logger.debug(f"Статистика запросов: сегодня={stats.get('requests_today', 0)}, "
+                        f"неделя={stats.get('requests_week', 0)}, "
+                        f"месяц={stats.get('requests_month', 0)}, "
+                        f"всего={stats.get('total_requests', 0)}")
+
         except Exception as e:
             logger.error(f"Ошибка получения статистики запросов: {e}")
+            # Устанавливаем значения по умолчанию при ошибке
+            stats.update({
+                'requests_today': 0,
+                'requests_week': 0,
+                'requests_month': 0,
+                'total_requests': 0
+            })
 
     async def _add_payment_statistics(self, stats: Dict[str, Any]):
-        """Добавить статистику платежей"""
+        """
+        Добавить статистику платежей (ИСПРАВЛЕНО)
+        Production-ready подсчет доходов с правильными временными интервалами
+        """
         try:
-            today = datetime.now().date()
-            week_ago = datetime.now() - timedelta(days=7)
-            month_ago = datetime.now() - timedelta(days=30)
+            # Точные временные границы
+            now = datetime.now()
+            today_start = datetime.combine(now.date(), datetime.min.time())
+            week_start = now - timedelta(days=7)
+
+            # Начало текущего месяца (правильный подсчет)
+            month_start = datetime(now.year, now.month, 1)
 
             if self.db.adapter.db_type == 'sqlite':
                 # Платежи сегодня
@@ -384,8 +422,8 @@ class StatisticsService:
                         COALESCE(SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END), 0) as revenue,
                         COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful
                     FROM payments
-                    WHERE DATE(created_at) = ?
-                """, (today,))
+                    WHERE created_at >= ?
+                """, (today_start,))
 
                 if result:
                     stats['payments_today'] = result[0] if result[0] else 0
@@ -400,14 +438,14 @@ class StatisticsService:
                         COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful
                     FROM payments
                     WHERE created_at >= ?
-                """, (week_ago,))
+                """, (week_start,))
 
                 if result:
                     stats['payments_week'] = result[0] if result[0] else 0
                     stats['revenue_week'] = (result[1] if result[1] else 0) // 100
                     stats['successful_payments_week'] = result[2] if result[2] else 0
 
-                # Платежи за месяц
+                # Платежи за текущий месяц (с начала месяца)
                 result = await self.db.adapter.fetch_one("""
                     SELECT
                         COUNT(*) as count,
@@ -415,7 +453,7 @@ class StatisticsService:
                         COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful
                     FROM payments
                     WHERE created_at >= ?
-                """, (month_ago,))
+                """, (month_start,))
 
                 if result:
                     stats['payments_month'] = result[0] if result[0] else 0
@@ -423,7 +461,6 @@ class StatisticsService:
                     stats['successful_payments_month'] = result[2] if result[2] else 0
 
             else:  # PostgreSQL
-                # Аналогичные запросы для PostgreSQL с $1, $2 параметрами
                 # Платежи сегодня
                 result = await self.db.adapter.fetch_one("""
                     SELECT
@@ -431,8 +468,8 @@ class StatisticsService:
                         COALESCE(SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END), 0) as revenue,
                         COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful
                     FROM payments
-                    WHERE DATE(created_at) = $1
-                """, (today,))
+                    WHERE created_at >= $1
+                """, (today_start,))
 
                 if result:
                     if isinstance(result, dict):
@@ -444,8 +481,69 @@ class StatisticsService:
                         stats['revenue_today'] = (result[1] if result[1] else 0) // 100
                         stats['successful_payments_today'] = result[2] if result[2] else 0
 
-                # Аналогично для недели и месяца...
-                # (код аналогичен SQLite версии, но с $1 параметрами)
+                # Платежи за неделю
+                result = await self.db.adapter.fetch_one("""
+                    SELECT
+                        COUNT(*) as count,
+                        COALESCE(SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END), 0) as revenue,
+                        COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful
+                    FROM payments
+                    WHERE created_at >= $1
+                """, (week_start,))
+
+                if result:
+                    if isinstance(result, dict):
+                        stats['payments_week'] = result.get('count', 0)
+                        stats['revenue_week'] = (result.get('revenue', 0)) // 100
+                        stats['successful_payments_week'] = result.get('successful', 0)
+                    else:
+                        stats['payments_week'] = result[0] if result[0] else 0
+                        stats['revenue_week'] = (result[1] if result[1] else 0) // 100
+                        stats['successful_payments_week'] = result[2] if result[2] else 0
+
+                # Платежи за текущий месяц (с начала месяца)
+                result = await self.db.adapter.fetch_one("""
+                    SELECT
+                        COUNT(*) as count,
+                        COALESCE(SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END), 0) as revenue,
+                        COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful
+                    FROM payments
+                    WHERE created_at >= $1
+                """, (month_start,))
+
+                if result:
+                    if isinstance(result, dict):
+                        stats['payments_month'] = result.get('count', 0)
+                        stats['revenue_month'] = (result.get('revenue', 0)) // 100
+                        stats['successful_payments_month'] = result.get('successful', 0)
+                    else:
+                        stats['payments_month'] = result[0] if result[0] else 0
+                        stats['revenue_month'] = (result[1] if result[1] else 0) // 100
+                        stats['successful_payments_month'] = result[2] if result[2] else 0
+
+            # Общая статистика платежей за все время
+            result = await self.db.adapter.fetch_one("""
+                SELECT
+                    COUNT(*) as count,
+                    COALESCE(SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END), 0) as revenue,
+                    COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful
+                FROM payments
+            """)
+
+            if result:
+                if isinstance(result, dict):
+                    stats['payments_total'] = result.get('count', 0)
+                    stats['revenue_total'] = (result.get('revenue', 0)) // 100
+                    stats['successful_payments_total'] = result.get('successful', 0)
+                else:
+                    stats['payments_total'] = result[0] if result[0] else 0
+                    stats['revenue_total'] = (result[1] if result[1] else 0) // 100
+                    stats['successful_payments_total'] = result[2] if result[2] else 0
+
+            logger.debug(f"Статистика платежей: сегодня={stats.get('revenue_today', 0)}₽, "
+                        f"неделя={stats.get('revenue_week', 0)}₽, "
+                        f"месяц={stats.get('revenue_month', 0)}₽, "
+                        f"всего={stats.get('revenue_total', 0)}₽")
 
         except Exception as e:
             logger.error(f"Ошибка получения статистики платежей: {e}")
@@ -459,7 +557,10 @@ class StatisticsService:
                 'successful_payments_week': 0,
                 'payments_month': 0,
                 'revenue_month': 0,
-                'successful_payments_month': 0
+                'successful_payments_month': 0,
+                'payments_total': 0,
+                'revenue_total': 0,
+                'successful_payments_total': 0
             })
 
     async def _add_broadcast_statistics(self, stats: Dict[str, Any]):

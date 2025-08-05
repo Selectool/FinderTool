@@ -19,14 +19,10 @@ templates = Jinja2Templates(directory="admin/templates")
 router = APIRouter()
 
 
-async def require_auth(request: Request) -> TokenData:
-    """Требовать аутентификацию"""
-    current_user = await get_current_user_from_cookie(request)
+async def require_auth(current_user: Optional[TokenData] = Depends(get_current_user_from_cookie)):
+    """Middleware для проверки аутентификации (ИСПРАВЛЕНО)"""
     if not current_user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Требуется аутентификация"
-        )
+        return RedirectResponse(url="/auth/login", status_code=302)
     return current_user
 
 
