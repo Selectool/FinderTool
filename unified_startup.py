@@ -115,27 +115,110 @@ class UnifiedService:
         logger.info(f"🛑 Получен сигнал {signum}, начинаем graceful shutdown...")
         self.running = False
     
+    async def discover_database_host(self) -> Optional[str]:
+        """Автоматическое обнаружение правильного хоста базы данных"""
+        logger.info("🔍 Автоматическое обнаружение хоста базы данных...")
+
+        # Возможные имена хостов PostgreSQL в Dokploy
+        possible_hosts = [
+            'postgres',
+            'postgresql',
+            'db',
+            'database',
+            'localhost',
+            '127.0.0.1',
+            'postgres-inGABWIP0OB6grXZXTORS',  # По ID сервиса из логов
+            'findertool-postgres',
+            'findertool-db',
+            'postgres-service'
+        ]
+
+        import socket
+        from urllib.parse import urlparse
+        from config import DATABASE_URL
+
+        # Парсим текущий URL для получения учетных данных
+        try:
+            parsed = urlparse(DATABASE_URL)
+            username = parsed.username or 'findertool_user'
+            password = parsed.password or 'Findertool1999!'
+            database = parsed.path[1:] if parsed.path else 'findertool_prod'
+            port = parsed.port or 5432
+        except Exception as e:
+            logger.error(f"❌ Ошибка парсинга DATABASE_URL: {e}")
+            return None
+
+        # Тестируем каждый возможный хост
+        for host in possible_hosts:
+            try:
+                # Проверяем DNS резолюцию
+                socket.gethostbyname(host)
+
+                # Проверяем подключение к порту
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(3)
+                result = sock.connect_ex((host, port))
+                sock.close()
+
+                if result == 0:
+                    # Тестируем PostgreSQL подключение
+                    test_url = f"postgresql://{username}:{password}@{host}:{port}/{database}"
+                    try:
+                        import psycopg2
+                        conn = psycopg2.connect(test_url)
+                        conn.close()
+                        logger.info(f"✅ Найден рабочий хост: {host}")
+                        return test_url
+                    except Exception as e:
+                        logger.debug(f"❌ PostgreSQL ошибка для {host}: {e}")
+
+            except Exception as e:
+                logger.debug(f"❌ Сетевая ошибка для {host}: {e}")
+
+        logger.error("❌ Не найден рабочий хост базы данных")
+        return None
+
     async def wait_for_database(self, max_retries: int = 30) -> bool:
-        """Ожидание доступности базы данных"""
+        """Ожидание доступности базы данных с автоматическим обнаружением хоста"""
         logger.info("⏳ Ожидание доступности базы данных...")
+
+        from config import DATABASE_URL
+        original_url = DATABASE_URL
 
         for attempt in range(max_retries):
             try:
                 import psycopg2
-                from config import DATABASE_URL
 
-                # Проверяем подключение
+                # Проверяем подключение с текущим URL
                 conn = psycopg2.connect(DATABASE_URL)
                 conn.close()
                 logger.info("✅ База данных доступна")
                 return True
 
             except Exception as e:
+                error_msg = str(e)
+
+                # Если это ошибка DNS резолюции, пытаемся найти правильный хост
+                if "could not translate host name" in error_msg or "Name or service not known" in error_msg:
+                    if attempt == 0:  # Только при первой попытке
+                        logger.warning(f"🔍 DNS ошибка, ищем альтернативный хост: {error_msg}")
+                        discovered_url = await self.discover_database_host()
+
+                        if discovered_url:
+                            # Обновляем DATABASE_URL в config
+                            import config
+                            config.DATABASE_URL = discovered_url
+                            logger.info(f"🔧 Обновлен DATABASE_URL на: {discovered_url[:50]}...")
+                            continue
+
                 if attempt < max_retries - 1:
-                    logger.warning(f"⏳ Ожидание БД (попытка {attempt + 1}/{max_retries}): {e}")
+                    logger.warning(f"⏳ Ожидание БД (попытка {attempt + 1}/{max_retries}): {error_msg}")
                     await asyncio.sleep(2)
                 else:
-                    logger.error(f"❌ БД недоступна после {max_retries} попыток: {e}")
+                    logger.error(f"❌ БД недоступна после {max_retries} попыток: {error_msg}")
+
+                    # В последней попытке показываем диагностическую информацию
+                    logger.error("🔧 Запустите database_connection_test.py для диагностики")
                     return False
 
         return False
