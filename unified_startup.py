@@ -19,6 +19,10 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional, Dict, Any
+from dotenv import load_dotenv
+
+# Загружаем переменные из .env файла
+load_dotenv()
 
 # Добавляем корневую директорию в путь
 sys.path.insert(0, str(Path(__file__).parent))
@@ -347,9 +351,14 @@ class UnifiedService:
             # Создаем диспетчер
             dp = Dispatcher(storage=MemoryStorage())
 
+            # Получаем экземпляр базы данных
+            from database.universal_database import UniversalDatabase
+            from config import DATABASE_URL
+            db = UniversalDatabase(DATABASE_URL)
+
             # Регистрируем middleware
-            dp.message.middleware(DatabaseMiddleware())
-            dp.callback_query.middleware(DatabaseMiddleware())
+            dp.message.middleware(DatabaseMiddleware(db))
+            dp.callback_query.middleware(DatabaseMiddleware(db))
             dp.message.middleware(RoleMiddleware())
             dp.callback_query.middleware(RoleMiddleware())
 

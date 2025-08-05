@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class AuthMiddleware(BaseMiddleware):
     """Middleware для аутентификации пользователей"""
     
-    def __init__(self, db: Optional[Database] = None):
+    def __init__(self, db: Optional[UniversalDatabase] = None):
         self.db = db
         super().__init__()
     

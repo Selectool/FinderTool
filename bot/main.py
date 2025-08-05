@@ -56,9 +56,14 @@ async def setup_bot():
     # Создаем диспетчер
     dp = Dispatcher(storage=MemoryStorage())
     
+    # Получаем экземпляр базы данных
+    from database.universal_database import UniversalDatabase
+    from config import DATABASE_URL
+    db = UniversalDatabase(DATABASE_URL)
+
     # Регистрируем middleware
-    dp.message.middleware(DatabaseMiddleware())
-    dp.callback_query.middleware(DatabaseMiddleware())
+    dp.message.middleware(DatabaseMiddleware(db))
+    dp.callback_query.middleware(DatabaseMiddleware(db))
     dp.message.middleware(RoleMiddleware())
     dp.callback_query.middleware(RoleMiddleware())
     
