@@ -263,6 +263,16 @@ async def app_info():
     }
 
 
+# Простой health endpoint для API клиента
+@app.get("/health")
+async def simple_health_check():
+    """Простая проверка здоровья для API клиента"""
+    return {
+        "status": "healthy",
+        "timestamp": time.time(),
+        "service": "admin-panel"
+    }
+
 # Проверка здоровья приложения
 @app.get("/api/health")
 async def health_check(request: Request):
