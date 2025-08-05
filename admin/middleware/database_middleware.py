@@ -5,11 +5,15 @@ Production-ready Database Middleware для FastAPI
 
 import logging
 import time
+import os
 from typing import Callable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from database.universal_database import UniversalDatabase
+
+# Получаем переменную окружения
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 
 logger = logging.getLogger(__name__)
 
