@@ -608,18 +608,20 @@ class UniversalDatabase:
             if self.adapter.db_type == 'sqlite':
                 query = """
                     INSERT INTO broadcasts
-                    (title, message_text, target_users, scheduled_time, created_by, created_at, status)
-                    VALUES (?, ?, ?, ?, ?, ?, 'pending')
+                    (title, message, message_text, target_users, scheduled_time, created_by, created_at, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
                 """
-                params = (title, message_text, target_users, scheduled_time, created_by, datetime.now())
+                # Используем message_text как message для совместимости
+                params = (title, message_text or "", message_text, target_users, scheduled_time, created_by, datetime.now())
             else:  # PostgreSQL
                 query = """
                     INSERT INTO broadcasts
-                    (title, message_text, target_users, scheduled_time, created_by, created_at, status)
-                    VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+                    (title, message, message_text, target_users, scheduled_time, created_by, created_at, status)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
                     RETURNING id
                 """
-                params = (title, message_text, target_users, scheduled_time, created_by, datetime.now())
+                # Используем message_text как message для совместимости
+                params = (title, message_text or "", message_text, target_users, scheduled_time, created_by, datetime.now())
 
             if self.adapter.db_type == 'postgresql':
                 result = await self.adapter.fetch_one(query, params)
