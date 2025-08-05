@@ -16,7 +16,8 @@ def find_working_postgres_host():
     
     # Возможные имена хостов в Dokploy (в порядке приоритета)
     possible_hosts = [
-        'findertool-db',  # НАИБОЛЕЕ ВЕРОЯТНЫЙ - видно в Dokploy UI
+        '185.207.66.201',  # ВНЕШНИЙ IP VPS - наиболее вероятный
+        'findertool-db',   # Dokploy UI имя
         'postgres',
         'postgresql',
         'db',
