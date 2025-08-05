@@ -1,0 +1,58 @@
+{
+	"name": "findertool",
+	"version": "1.0.0",
+	"description": "Telegram Channel Finder Bot with Admin Panel",
+	"main": "unified_startup.py",
+	"scripts": {
+		"start": "python unified_startup.py",
+		"dev": "python main.py",
+		"admin": "python run_admin.py"
+	},
+	"dependencies": {
+		"python": "3.11"
+	},
+	"engines": {
+		"python": "3.11"
+	},
+	"buildpacks": [
+		"heroku/python"
+	],
+	"env": {
+		"TELEGRAM_BOT_TOKEN": {
+			"description": "Telegram Bot API Token",
+			"required": true
+		},
+		"DATABASE_URL": {
+			"description": "PostgreSQL Database URL",
+			"required": true
+		},
+		"YOOKASSA_SHOP_ID": {
+			"description": "YooKassa Shop ID",
+			"required": true
+		},
+		"YOOKASSA_SECRET_KEY": {
+			"description": "YooKassa Secret Key",
+			"required": true
+		},
+		"ADMIN_PASSWORD": {
+			"description": "Admin Panel Password",
+			"required": true
+		}
+	},
+	"formation": {
+		"web": {
+			"quantity": 1,
+			"size": "basic"
+		}
+	},
+	"addons": [
+		"heroku-postgresql:mini"
+	],
+	"stack": "heroku-22",
+	"regions": [
+		"us"
+	],
+	"domains": ["findertool.railpack.app"],
+	"buildCommand": "pip install -r requirements.txt",
+	"startCommand": "python unified_startup.py"
+}
