@@ -98,13 +98,14 @@ app = FastAPI(
     openapi_url="/api/openapi.json"
 )
 
-# Middleware
+# Production-ready Security Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "X-CSRF-Token"],
+    expose_headers=["X-CSRF-Token"]
 )
 
 if ALLOWED_HOSTS != ["*"]:
@@ -139,6 +140,31 @@ async def log_requests(request: Request, call_next):
         process_time=round(process_time, 4)
     )
     
+    return response
+
+
+# Security headers middleware для production
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Добавляет security headers для production"""
+    response = await call_next(request)
+
+    # Security headers для production
+    if ENVIRONMENT == "production":
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "img-src 'self' data: https:; "
+            "font-src 'self' https://cdn.jsdelivr.net; "
+            "connect-src 'self'"
+        )
+
     return response
 
 
@@ -205,11 +231,27 @@ async def internal_error_handler(request: Request, exc: HTTPException):
     )
 
 
-# Главная страница (редирект на логин или дашборд)
+# Главная страница (защищенный редирект)
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    """Главная страница"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    """Главная страница - проверяет авторизацию и перенаправляет"""
+    # Проверяем наличие токена в cookies
+    access_token = request.cookies.get("access_token")
+
+    if access_token:
+        # Если токен есть, проверяем его валидность
+        try:
+            from .auth.auth import verify_token
+            token_data = verify_token(access_token)
+            if token_data:
+                # Токен валиден, перенаправляем на дашборд
+                return RedirectResponse(url="/dashboard", status_code=302)
+        except Exception:
+            # Токен невалиден, продолжаем к форме входа
+            pass
+
+    # Если токена нет или он невалиден, показываем форму входа
+    return RedirectResponse(url="/auth/login", status_code=302)
 
 
 @app.get("/audit", response_class=HTMLResponse)
@@ -251,19 +293,34 @@ app.include_router(web_broadcasts.router, prefix="/broadcasts", tags=["web-broad
 app.include_router(web_payment_cleanup.router, prefix="/payment-cleanup", tags=["web-payment-cleanup"])
 
 
-# Информация о приложении
+# Информация о приложении (только для авторизованных пользователей)
 @app.get("/api/info")
-async def app_info():
-    """Информация о приложении"""
+async def app_info(request: Request):
+    """Информация о приложении (требует авторизации)"""
+    # Проверяем авторизацию
+    access_token = request.cookies.get("access_token") or request.headers.get("Authorization", "").replace("Bearer ", "")
+
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+
+    try:
+        from .auth.auth import verify_token
+        token_data = verify_token(access_token)
+        if not token_data:
+            raise HTTPException(status_code=401, detail="Недействительный токен")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Ошибка проверки токена")
+
     return {
         "name": "Telegram Channel Finder Bot Admin Panel",
         "version": "1.0.0",
         "status": "running",
-        "debug": DEBUG
+        "debug": DEBUG,
+        "user": token_data.username if token_data else None
     }
 
 
-# Простой health endpoint для API клиента
+# Простой health endpoint для API клиента (без авторизации)
 @app.get("/health")
 async def simple_health_check():
     """Простая проверка здоровья для API клиента"""

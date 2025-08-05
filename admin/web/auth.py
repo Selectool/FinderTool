@@ -88,16 +88,15 @@ async def login_submit(
             max_age=7 * 24 * 60 * 60  # 7 дней
         )
 
-        # Токен для JavaScript (только в development)
-        if not is_production:
-            redirect_response.set_cookie(
-                key="js_access_token",
-                value=token_data["access_token"],
-                httponly=False,
-                secure=False,
-                samesite="lax",
-                max_age=token_data.get("expires_in", 1800)
-            )
+        # Токен для JavaScript (с правильными настройками безопасности)
+        redirect_response.set_cookie(
+            key="js_access_token",
+            value=token_data["access_token"],
+            httponly=False,  # JavaScript должен иметь доступ
+            secure=secure_cookies,  # HTTPS в production
+            samesite="strict" if is_production else "lax",
+            max_age=token_data.get("expires_in", 1800)
+        )
 
         # Логируем успешный вход
         logger.info(f"✅ Успешный вход: пользователь={username}, IP={client_ip}")
