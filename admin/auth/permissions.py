@@ -1,30 +1,93 @@
 """
 Система разрешений и декораторы
+Production-Ready Universal Authentication
 """
 from functools import wraps
 from typing import List, Optional
-from fastapi import HTTPException, status, Depends, Request
+from fastapi import HTTPException, status, Depends, Request, Cookie
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import logging
 
 from .auth import verify_token, check_permission
 from .models import TokenData
 
+logger = logging.getLogger(__name__)
+
 # Схема безопасности
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)  # auto_error=False для поддержки cookies
 
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> TokenData:
-    """Получить текущего пользователя из токена"""
+async def get_current_user_universal(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    access_token: Optional[str] = Cookie(None)
+) -> TokenData:
+    """
+    Production-Ready Universal Authentication
+    Поддерживает токены из Authorization header и cookies
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
+    token = None
+    auth_method = None
+
+    # Приоритет 1: Authorization header
+    if credentials and credentials.credentials:
+        token = credentials.credentials
+        auth_method = "Authorization header"
+        logger.debug(f"🔐 Токен из Authorization header: {token[:20]}...")
+
+    # Приоритет 2: Cookie
+    elif access_token:
+        token = access_token
+        auth_method = "Cookie"
+        logger.debug(f"🔐 Токен из cookie: {token[:20]}...")
+
+    if not token:
+        logger.warning("❌ Токен не найден ни в заголовках, ни в cookies")
+        raise credentials_exception
+
+    logger.info(f"🔐 Проверка токена ({auth_method}): {token[:20]}...")
+
+    token_data = verify_token(token)
+    if token_data is None:
+        logger.warning(f"❌ Токен недействителен ({auth_method})")
+        raise credentials_exception
+
+    logger.info(f"✅ Токен валиден ({auth_method}). Пользователь: {token_data.username}, роль: {token_data.role}")
+    return token_data
+
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> TokenData:
+    """
+    Получить текущего пользователя из токена (только Authorization header)
+    Deprecated: используйте get_current_user_universal для production
+    """
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    logger.info(f"🔐 Проверка токена: {credentials.credentials[:20]}...")
+
     token_data = verify_token(credentials.credentials)
     if token_data is None:
+        logger.warning("❌ Токен недействителен")
         raise credentials_exception
-    
+
+    logger.info(f"✅ Токен валиден. Пользователь: {token_data.username}, роль: {token_data.role}")
     return token_data
 
 
@@ -72,12 +135,24 @@ class PermissionChecker:
         self.required_permissions = required_permissions
 
     def __call__(self, current_user: TokenData = Depends(get_current_active_user)) -> TokenData:
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"🔒 Проверка прав для пользователя {current_user.username} (роль: {current_user.role})")
+        logger.info(f"🔒 Требуемые права: {self.required_permissions}")
+
         for permission in self.required_permissions:
-            if not check_permission(current_user.role, permission):
+            has_permission = check_permission(current_user.role, permission)
+            logger.info(f"🔒 Право '{permission}': {'✅ ЕСТЬ' if has_permission else '❌ НЕТ'}")
+
+            if not has_permission:
+                logger.warning(f"❌ Доступ запрещен для {current_user.username}: нет права {permission}")
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"Permission denied: {permission}"
                 )
+
+        logger.info(f"✅ Все права проверены для {current_user.username}")
         return current_user
 
 
@@ -116,24 +191,28 @@ def log_admin_action(action: str, resource_type: str):
             # Логируем действие
             if current_user and db:
                 try:
-                    details = {
+                    import json
+                    details_dict = {
                         "function": func.__name__,
-                        "args": str(args),
+                        "args": str(args)[:500],  # Ограничиваем длину для безопасности
                         "result": "success"
                     }
-                    
+
+                    # Сериализуем детали в JSON строку
+                    details_json = json.dumps(details_dict, ensure_ascii=False)
+
                     ip_address = None
                     user_agent = None
-                    
+
                     if request:
                         ip_address = request.client.host if request.client else None
                         user_agent = request.headers.get("user-agent")
-                    
+
                     await db.log_admin_action(
                         admin_user_id=current_user.user_id,
                         action=action,
                         resource_type=resource_type,
-                        details=details,
+                        details=details_json,  # Передаем JSON строку
                         ip_address=ip_address,
                         user_agent=user_agent
                     )

@@ -21,6 +21,21 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
+def format_date(dt, default='Неизвестно'):
+    """Функция для форматирования дат (только дата без времени)"""
+    if not dt or dt == default:
+        return default
+
+    if hasattr(dt, 'strftime'):
+        return dt.strftime('%Y-%m-%d')
+    elif isinstance(dt, str):
+        if len(dt) > 10:
+            return dt[:10]
+        return dt
+    else:
+        return str(dt)[:10] if dt else default
+
+
 @router.message(F.text == ReplyButtons.MAIN_MENU)
 @router.message(F.text == ReplyButtons.MENU_SHORT)
 async def handle_main_menu(message: Message, db: UniversalDatabase):
@@ -95,11 +110,11 @@ async def handle_profile(message: Message, db: UniversalDatabase):
 🔍 Запросов использовано: {user.get('requests_used', 0)} из {FREE_REQUESTS_LIMIT} бесплатных
 💎 Подписка: {subscription_text}
 
-📅 Дата регистрации: {user.get('created_at', 'Неизвестно')[:10] if user.get('created_at') else 'Неизвестно'}
+📅 Дата регистрации: {format_date(user.get('created_at'))}
         """
-        
+
         if is_subscribed and user.get('subscription_end'):
-            profile_text += f"\n⏰ Подписка до: {user['subscription_end'][:10]}"
+            profile_text += f"\n⏰ Подписка до: {format_date(user['subscription_end'])}"
         
         await message.answer(
             profile_text.strip(),
@@ -123,7 +138,7 @@ async def handle_subscription(message: Message, db: UniversalDatabase):
         
         if is_subscribed:
             user = await db.get_user(user_id)
-            subscription_end = user.get('subscription_end', 'Неизвестно')[:10] if user.get('subscription_end') else 'Неизвестно'
+            subscription_end = format_date(user.get('subscription_end'))
             
             await message.answer(
                 f"💎 <b>У вас есть активная подписка!</b>\n\n"

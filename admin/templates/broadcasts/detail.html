@@ -416,9 +416,10 @@ endblock %} {% block extra_head %}
 		</div>
 	</div>
 </div>
-{% endblock %} {% block extra_scripts %}
+{% endblock %} {% block extra_js %}
 <script>
-	const broadcastId = {{ broadcast.id }};
+	// Получаем ID рассылки из URL
+	const broadcastId = parseInt(window.location.pathname.split('/').pop()) || {{ broadcast.id or 0 }};
 	let deliveryChart;
 
 	document.addEventListener('DOMContentLoaded', function() {
@@ -509,11 +510,41 @@ endblock %} {% block extra_head %}
 	        if (response.ok) {
 	            const data = await response.json();
 	            displayLogs(data.logs);
+	        } else {
+	            // Обработка HTTP ошибок
+	            console.error('HTTP ошибка:', response.status, response.statusText);
+
+	            if (response.status === 401) {
+	                // Ошибка аутентификации - перенаправляем на логин
+	                window.location.href = '/auth/login';
+	                return;
+	            }
+
+	            // Другие HTTP ошибки
+	            const errorData = await response.json().catch(() => ({}));
+	            const errorMessage = errorData.detail || `HTTP ${response.status}: ${response.statusText}`;
+
+	            document.getElementById('logsContainer').innerHTML =
+	                `<div class="text-center text-danger">
+	                    <i class="fas fa-exclamation-triangle mb-2"></i><br>
+	                    Ошибка загрузки логов: ${errorMessage}
+	                    <br><br>
+	                    <button class="btn btn-outline-primary btn-sm" onclick="loadLogs()">
+	                        <i class="fas fa-redo"></i> Повторить
+	                    </button>
+	                </div>`;
 	        }
 	    } catch (error) {
 	        console.error('Ошибка загрузки логов:', error);
 	        document.getElementById('logsContainer').innerHTML =
-	            '<div class="text-center text-danger">Ошибка загрузки логов</div>';
+	            `<div class="text-center text-danger">
+	                <i class="fas fa-exclamation-triangle mb-2"></i><br>
+	                Ошибка сети или сервера
+	                <br><br>
+	                <button class="btn btn-outline-primary btn-sm" onclick="loadLogs()">
+	                    <i class="fas fa-redo"></i> Повторить
+	                </button>
+	            </div>`;
 	    }
 	}
 

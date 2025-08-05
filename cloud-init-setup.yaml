@@ -1,0 +1,203 @@
+#cloud-config
+
+# Cloud-init конфигурация для автоматической настройки Telegram Channel Finder Bot
+# Этот файл нужно вставить в панель управления Timeweb Cloud
+
+# Обновление пакетов при загрузке
+package_update: true
+package_upgrade: false
+
+# Установка необходимых пакетов
+packages:
+  - git
+  - python3
+  - python3-pip
+  - python3-venv
+  - postgresql-client
+  - curl
+  - htop
+  - nano
+
+# Создание пользователей (опционально)
+users:
+  - name: botuser
+    groups: sudo
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+
+# Команды для выполнения при первой загрузке
+runcmd:
+  # Переход в рабочую директорию
+  - cd /app
+  
+  # Проверка наличия проекта
+  - |
+    if [ ! -f "/app/main.py" ]; then
+      echo "Проект не найден в /app, клонируем из репозитория..."
+      git clone https://github.com/InfoBlog360/telegram-channel-finder-bot.git /tmp/bot
+      cp -r /tmp/bot/* /app/
+      rm -rf /tmp/bot
+    fi
+  
+  # Создание виртуального окружения если его нет
+  - |
+    if [ ! -d "/app/.venv" ]; then
+      echo "Создание виртуального окружения..."
+      cd /app
+      python3 -m venv .venv
+      source .venv/bin/activate
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    fi
+  
+  # Создание systemd сервисов
+  - |
+    echo "Создание systemd сервисов..."
+    
+    # Telegram Bot Service
+    cat > /etc/systemd/system/telegram-bot.service << 'EOF'
+    [Unit]
+    Description=Telegram Channel Finder Bot
+    After=network.target postgresql.service
+    Wants=postgresql.service
+    StartLimitIntervalSec=0
+
+    [Service]
+    Type=simple
+    Restart=always
+    RestartSec=10
+    User=root
+    WorkingDirectory=/app
+    Environment=PATH=/app/.venv/bin
+    ExecStart=/app/.venv/bin/python main.py
+    StandardOutput=journal
+    StandardError=journal
+    SyslogIdentifier=telegram-bot
+
+    # Настройки безопасности
+    NoNewPrivileges=true
+    PrivateTmp=true
+
+    # Настройки ресурсов
+    MemoryMax=512M
+    CPUQuota=50%
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+    
+    # Admin Panel Service
+    cat > /etc/systemd/system/admin-panel.service << 'EOF'
+    [Unit]
+    Description=Telegram Bot Admin Panel
+    After=network.target postgresql.service
+    Wants=postgresql.service
+    StartLimitIntervalSec=0
+
+    [Service]
+    Type=simple
+    Restart=always
+    RestartSec=10
+    User=root
+    WorkingDirectory=/app
+    Environment=PATH=/app/.venv/bin
+    ExecStart=/app/.venv/bin/python run_admin.py
+    StandardOutput=journal
+    StandardError=journal
+    SyslogIdentifier=admin-panel
+
+    # Настройки безопасности
+    NoNewPrivileges=true
+    PrivateTmp=true
+
+    # Настройки ресурсов
+    MemoryMax=512M
+    CPUQuota=50%
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+  
+  # Активация и запуск сервисов
+  - systemctl daemon-reload
+  - systemctl enable telegram-bot.service
+  - systemctl enable admin-panel.service
+  
+  # Ожидание готовности системы
+  - sleep 10
+  
+  # Запуск сервисов
+  - systemctl start telegram-bot.service
+  - systemctl start admin-panel.service
+  
+  # Создание скрипта управления
+  - |
+    cat > /app/manage_services.sh << 'EOF'
+    #!/bin/bash
+    # Быстрый скрипт управления службами
+    case "${1:-status}" in
+        "status")
+            systemctl status telegram-bot.service admin-panel.service --no-pager
+            ;;
+        "restart")
+            systemctl restart telegram-bot.service admin-panel.service
+            echo "Службы перезапущены"
+            ;;
+        "stop")
+            systemctl stop telegram-bot.service admin-panel.service
+            echo "Службы остановлены"
+            ;;
+        "start")
+            systemctl start telegram-bot.service admin-panel.service
+            echo "Службы запущены"
+            ;;
+        "logs")
+            journalctl -u telegram-bot.service -u admin-panel.service --no-pager -n 50
+            ;;
+        *)
+            echo "Использование: $0 {status|start|stop|restart|logs}"
+            ;;
+    esac
+    EOF
+    chmod +x /app/manage_services.sh
+  
+  # Создание алиасов для удобства
+  - echo 'alias bot-status="systemctl status telegram-bot.service admin-panel.service"' >> /root/.bashrc
+  - echo 'alias bot-restart="systemctl restart telegram-bot.service admin-panel.service"' >> /root/.bashrc
+  - echo 'alias bot-logs="journalctl -u telegram-bot.service -u admin-panel.service -f"' >> /root/.bashrc
+  - echo 'alias bot-manage="/app/manage_services.sh"' >> /root/.bashrc
+
+# Файлы для записи
+write_files:
+  - path: /app/startup_check.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      echo "🚀 Проверка запуска служб Telegram бота..."
+      sleep 30
+      
+      if ! systemctl is-active --quiet telegram-bot.service; then
+        echo "⚠️ Telegram бот не запущен, попытка запуска..."
+        systemctl start telegram-bot.service
+      fi
+      
+      if ! systemctl is-active --quiet admin-panel.service; then
+        echo "⚠️ Админ-панель не запущена, попытка запуска..."
+        systemctl start admin-panel.service
+      fi
+      
+      echo "✅ Проверка завершена"
+
+# Финальные команды
+final_message: |
+  🎉 Автоматическая настройка Telegram Channel Finder Bot завершена!
+  
+  Службы настроены и должны запуститься автоматически.
+  
+  Полезные команды:
+  - systemctl status telegram-bot.service
+  - systemctl status admin-panel.service
+  - /app/manage_services.sh status
+  - journalctl -u telegram-bot.service -f
+  
+  Админ-панель доступна по адресу: http://YOUR_SERVER_IP:8080

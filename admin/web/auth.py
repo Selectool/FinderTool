@@ -12,6 +12,7 @@ from datetime import datetime
 
 from ..auth.auth import verify_token
 from ..auth.models import TokenData
+from ..services.api_client import api_client
 
 templates = Jinja2Templates(directory="admin/templates")
 router = APIRouter()
@@ -46,80 +47,95 @@ async def login_submit(
     username: str = Form(...),
     password: str = Form(...)
 ):
-    """Обработка формы входа"""
+    """
+    Production-ready обработка формы входа
+    Поддерживает локальную и удаленную аутентификацию с fallback
+    """
+
+    # Логируем попытку входа для аудита
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "unknown")
+
+    logger.info(f"🔐 Попытка входа: пользователь={username}, IP={client_ip}")
+
     try:
-        # Отправляем запрос к API аутентификации
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"http://185.207.66.201:8080/api/auth/login",
-                json={"username": username, "password": password},
-                timeout=10.0
-            )
+        # Используем production-ready API клиент
+        token_data = await api_client.authenticate(username, password)
 
-        if response.status_code == 200:
-            token_data = response.json()
+        # Определяем настройки безопасности для cookies
+        is_production = os.getenv("ENVIRONMENT") == "production"
+        secure_cookies = is_production
 
-            # Создаем ответ с редиректом
-            redirect_response = RedirectResponse(url="/dashboard", status_code=302)
+        # Создаем ответ с редиректом
+        redirect_response = RedirectResponse(url="/dashboard", status_code=302)
 
-            # Устанавливаем токены в cookies
+        # Устанавливаем токены в cookies с правильными настройками безопасности
+        redirect_response.set_cookie(
+            key="access_token",
+            value=token_data["access_token"],
+            httponly=True,
+            secure=secure_cookies,
+            samesite="strict" if is_production else "lax",
+            max_age=token_data.get("expires_in", 1800)
+        )
+
+        redirect_response.set_cookie(
+            key="refresh_token",
+            value=token_data["refresh_token"],
+            httponly=True,
+            secure=secure_cookies,
+            samesite="strict" if is_production else "lax",
+            max_age=7 * 24 * 60 * 60  # 7 дней
+        )
+
+        # Токен для JavaScript (только в development)
+        if not is_production:
             redirect_response.set_cookie(
-                key="access_token",
+                key="js_access_token",
                 value=token_data["access_token"],
-                httponly=True,
-                secure=False,  # В production должно быть True
-                samesite="lax",
-                max_age=token_data.get("expires_in", 1800)  # 30 минут по умолчанию
-            )
-            redirect_response.set_cookie(
-                key="refresh_token",
-                value=token_data["refresh_token"],
-                httponly=True,
+                httponly=False,
                 secure=False,
                 samesite="lax",
-                max_age=7 * 24 * 60 * 60  # 7 дней
+                max_age=token_data.get("expires_in", 1800)
             )
 
-            logger.info(f"Успешный вход пользователя: {username}")
+        # Логируем успешный вход
+        logger.info(f"✅ Успешный вход: пользователь={username}, IP={client_ip}")
 
-            return redirect_response
+        return redirect_response
 
-        else:
+    except HTTPException as e:
+        # Обрабатываем HTTP ошибки от API клиента
+        error_detail = e.detail
+        status_code = e.status_code
+
+        if status_code == 401:
             error_detail = "Неверное имя пользователя или пароль"
-            if response.status_code == 422:
-                try:
-                    error_data = response.json()
-                    error_detail = error_data.get("detail", error_detail)
-                except:
-                    pass
+            logger.warning(f"⚠️ Неудачная попытка входа: пользователь={username}, IP={client_ip}")
+        elif status_code == 503:
+            error_detail = "Сервис временно недоступен. Попробуйте позже."
+            logger.error(f"❌ Сервис недоступен при входе: пользователь={username}, IP={client_ip}")
+        else:
+            logger.error(f"❌ HTTP ошибка при входе: {status_code} - {error_detail}")
 
-            logger.warning(f"Неудачная попытка входа: {username}")
-            return templates.TemplateResponse(
-                "auth/login.html",
-                {
-                    "request": request,
-                    "error": error_detail,
-                    "username": username  # Сохраняем введенное имя пользователя
-                }
-            )
-
-    except httpx.TimeoutException:
-        logger.error("Timeout при попытке аутентификации")
         return templates.TemplateResponse(
             "auth/login.html",
             {
                 "request": request,
-                "error": "Превышено время ожидания. Попробуйте еще раз.",
+                "error": error_detail,
                 "username": username
             }
         )
+
     except Exception as e:
-        logger.error(f"Ошибка при аутентификации: {str(e)}")
+        # Обрабатываем неожиданные ошибки
+        logger.error(f"❌ Неожиданная ошибка при аутентификации: {str(e)}", exc_info=True)
+
         return templates.TemplateResponse(
             "auth/login.html",
             {
                 "request": request,
-                "error": "Ошибка подключения к серверу. Попробуйте позже.",
+                "error": "Произошла внутренняя ошибка. Попробуйте позже.",
                 "username": username
             }
         )
@@ -131,6 +147,8 @@ async def logout():
     response = RedirectResponse(url="/", status_code=302)
     response.delete_cookie("access_token")
     response.delete_cookie("refresh_token")
+    response.delete_cookie("js_access_token")
+    response.delete_cookie("csrf_token")
     return response
 
 @router.get("/token-login")
@@ -229,6 +247,16 @@ async def token_login(token: str = Query(...), request: Request = None):
             value=csrf_token,
             max_age=3600,  # 1 час
             httponly=False,  # Нужен для JavaScript
+            secure=True if os.getenv('ENVIRONMENT') == 'production' else False,
+            samesite="lax"
+        )
+
+        # Добавляем токен для JavaScript (без httponly)
+        response.set_cookie(
+            key="js_access_token",
+            value=access_token,
+            max_age=3600,  # 1 час
+            httponly=False,  # JavaScript может читать
             secure=True if os.getenv('ENVIRONMENT') == 'production' else False,
             samesite="lax"
         )

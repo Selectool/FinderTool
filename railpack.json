@@ -1,0 +1,47 @@
+{
+	"deploy": {
+		"startCommand": "python unified_startup.py",
+		"healthcheckCommand": "python -c \"import requests; requests.get('http://localhost:8080/api/health', timeout=5)\"",
+		"restartPolicy": "always",
+		"port": 8080,
+		"dockerfile": "Dockerfile.unified"
+	},
+	"build": {
+		"env": {
+			"PYTHONUNBUFFERED": "1",
+			"PYTHONDONTWRITEBYTECODE": "1",
+			"PIP_DISABLE_PIP_VERSION_CHECK": "1",
+			"PIP_DEFAULT_TIMEOUT": "100",
+			"ENVIRONMENT": "production",
+			"SERVICE_TYPE": "unified"
+		}
+	},
+	"runtime": {
+		"env": {
+			"ENVIRONMENT": "production",
+			"DATABASE_TYPE": "postgresql",
+			"DATABASE_URL": "postgresql://findertool_user:Findertool1999!@findertool-hyvrte:5432/findertool_prod",
+			"LOG_LEVEL": "INFO",
+			"SERVICE_TYPE": "unified",
+			"ADMIN_PORT": "8080",
+			"ADMIN_HOST": "0.0.0.0",
+			"ADMIN_DEBUG": "False"
+		}
+	},
+	"services": {
+		"postgres": {
+			"required": true,
+			"waitFor": true,
+			"host": "findertool-hyvrte",
+			"port": 5432
+		}
+	},
+	"resources": {
+		"memory": "1GB",
+		"cpu": "1.0"
+	},
+	"networking": {
+		"domains": ["findertool.railpack.app"],
+		"ssl": true
+	}
+}

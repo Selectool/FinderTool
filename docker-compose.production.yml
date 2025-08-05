@@ -1,0 +1,117 @@
+version: '3.8'
+
+services:
+  # PostgreSQL база данных с персистентным хранилищем
+  postgres:
+    image: postgres:15-alpine
+    container_name: findertool_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: findertool_prod
+      POSTGRES_USER: findertool_user
+      POSTGRES_PASSWORD: Findertool1999!
+      POSTGRES_SHARED_BUFFERS: 256MB
+      POSTGRES_MAX_CONNECTIONS: 100
+    volumes:
+      # КРИТИЧЕСКИ ВАЖНО: персистентное хранилище данных
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/backups:/backups
+    ports:
+      - "5432:5432"
+    networks:
+      - findertool_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U findertool_user -d findertool_prod"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Основное приложение бота
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    container_name: findertool_bot
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Подключение к PostgreSQL контейнеру
+      DATABASE_URL: postgresql://findertool_user:Findertool1999!@postgres:5432/findertool_prod
+      ENVIRONMENT: production
+      BOT_TOKEN: 8135556553:AAEunjiPptAw3Uco7UM2vFUMuZlBZn3LeRA
+      API_ID: 14613732
+      API_HASH: 5a23300ea0d694d2202a628cb7ca785
+      ADMIN_USER_ID: 5699315855
+      SUBSCRIPTION_PRICE: 349
+      FREE_REQUESTS_LIMIT: 3
+      SESSION_NAME: bot_session_prod
+      SESSION_STRING: 1ApWapzMBuybRwwLRLD6sVeg7_576ktq97cg-17lqxDxLuEzyMVhf9rVHIN9QhV8tPHnVPQx89n7JxO-ObIWVl4iVkE0YzDkkgv9Hxdg51Eii9KGPzNnd4XudbvXLpQBJSeNDaBD7LFtNem2KSP_zhlelNyIuR_HSwTnI6SW1yU3dV5hrMcYyGXvvPa_YuC8u9Gm6CVGnV-YFhe41HWzCKmKSFQ2rgrLqEcHP3QaN3PwGOUE7GUfU3xqnTBOnIBlYql7Qp9qUbNO3dtOUebwHztcc6EyUY5DBTtzwgdsGegPvSNCAP86Rkp0acDdfEy-XPQc9-1ES1HxshD9bF1vCrgMGghdzrqg=
+      ADMIN_SECRET_KEY: prod-secret-key-secure-2025
+      ADMIN_PORT: 8080
+      ADMIN_HOST: 0.0.0.0
+      ADMIN_DEBUG: "False"
+      JWT_SECRET_KEY: prod-jwt-secret-secure-2025
+      JWT_ALGORITHM: HS256
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 30
+      YOOKASSA_MODE: LIVE
+      YOOKASSA_LIVE_TOKEN: 390540012:LIVE:74136
+      YOOKASSA_CURRENCY: RUB
+      YOOKASSA_PRODUCT_DESCRIPTION: Подписка FinderTool на месяц
+      YOOKASSA_VAT_CODE: 1
+      YOOKASSA_SHOP_ID: 1133133
+      YOOKASSA_SECRET_KEY: live_VIJw9nphFuPr6qKj4Vx1WdwsSA6LNwDrLHFPynzNTRU
+      YOOKASSA_RETURN_URL: https://t.me/FinderTool_bot
+      LOG_LEVEL: INFO
+      SKIP_SSL_VERIFY: "False"
+      ENABLE_DEBUG_ROUTES: "False"
+      MOCK_PAYMENTS: "False"
+    volumes:
+      # Персистентное хранилище для сессий и логов
+      - bot_data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "8080:8080"
+    networks:
+      - findertool_network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Автоматическое резервное копирование
+  backup:
+    image: postgres:15-alpine
+    container_name: findertool_backup
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      PGPASSWORD: Findertool1999!
+    volumes:
+      - ./database/backups:/backups
+      - ./scripts/backup.sh:/backup.sh
+    networks:
+      - findertool_network
+    command: >
+      sh -c "
+        chmod +x /backup.sh &&
+        while true; do
+          sleep 3600;
+          /backup.sh;
+        done
+      "
+
+volumes:
+  # КРИТИЧЕСКИ ВАЖНО: персистентные тома
+  postgres_data:
+    driver: local
+  bot_data:
+    driver: local
+
+networks:
+  findertool_network:
+    driver: bridge

@@ -1,0 +1,65 @@
+{
+  "name": "admin-panel",
+  "description": "Admin Panel for Telegram Channel Finder Bot",
+  "deploy": {
+    "startCommand": "python run_admin.py",
+    "healthcheckCommand": "python -c \"import requests; requests.get('http://localhost:8080/api/health', timeout=5)\"",
+    "restartPolicy": "always",
+    "port": 8080,
+    "dockerfile": "Dockerfile.admin-panel"
+  },
+  "build": {
+    "env": {
+      "PYTHONUNBUFFERED": "1",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+      "PIP_DEFAULT_TIMEOUT": "100",
+      "ENVIRONMENT": "production",
+      "SERVICE_TYPE": "admin-panel"
+    }
+  },
+  "runtime": {
+    "env": {
+      "ENVIRONMENT": "production",
+      "DATABASE_TYPE": "postgresql",
+      "DATABASE_URL": "postgresql://findertool_user:Findertool1999!@findertool-hyvrte:5432/findertool_prod",
+      "LOG_LEVEL": "INFO",
+      "SERVICE_TYPE": "admin-panel",
+      "ADMIN_PORT": "8080",
+      "ADMIN_HOST": "0.0.0.0",
+      "ADMIN_DEBUG": "False",
+      "ADMIN_SECRET_KEY": "${ADMIN_SECRET_KEY}",
+      "ADMIN_ALLOWED_HOSTS": "185.207.66.201,findertool.dokploy.com,localhost,127.0.0.1,0.0.0.0",
+      "ADMIN_CORS_ORIGINS": "http://185.207.66.201:8080,https://findertool.dokploy.com,http://localhost:8080,http://127.0.0.1:8080",
+      "JWT_SECRET_KEY": "${JWT_SECRET_KEY}",
+      "JWT_ALGORITHM": "HS256",
+      "JWT_ACCESS_TOKEN_EXPIRE_MINUTES": "60",
+      "JWT_REFRESH_TOKEN_EXPIRE_DAYS": "30",
+      "ADMIN_USER_ID": "${ADMIN_USER_ID}",
+      "BOT_TOKEN": "${BOT_TOKEN}",
+      "BROADCAST_RATE_LIMIT": "30",
+      "BROADCAST_BATCH_SIZE": "10",
+      "BROADCAST_RETRY_ATTEMPTS": "3",
+      "ADMIN_LOG_LEVEL": "INFO",
+      "ADMIN_LOG_FILE": "admin_prod.log"
+    }
+  },
+  "services": {
+    "postgres": {
+      "required": true,
+      "waitFor": true,
+      "host": "findertool-hyvrte",
+      "port": 5432
+    }
+  },
+  "resources": {
+    "memory": "1GB",
+    "cpu": "1.0"
+  },
+  "networking": {
+    "domains": [
+      "findertool.dokploy.com"
+    ],
+    "ssl": true
+  }
+}

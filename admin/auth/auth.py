@@ -1,5 +1,5 @@
 """
-JWT аутентификация
+JWT аутентификация с production-ready управлением токенами
 """
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
@@ -7,9 +7,13 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, status
 import json
+import logging
 
 from ..config import JWT_SECRET_KEY, JWT_ALGORITHM, JWT_ACCESS_TOKEN_EXPIRE_MINUTES, JWT_REFRESH_TOKEN_EXPIRE_DAYS
 from .models import TokenData
+from .jwt_manager import jwt_manager
+
+logger = logging.getLogger(__name__)
 
 # Контекст для хеширования паролей
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -26,61 +30,105 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
-    """Создать access токен"""
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
-    
-    to_encode.update({"exp": expire, "type": "access"})
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-    return encoded_jwt
+    """Создать access токен (DEPRECATED - используйте jwt_manager.create_token_pair)"""
+    logger.warning("⚠️  Используется устаревший метод create_access_token. Рекомендуется jwt_manager.create_token_pair")
+
+    # Для обратной совместимости
+    user_id = data.get("sub", 0)
+    username = data.get("username", "unknown")
+    role = data.get("role", "admin")
+
+    try:
+        user_id = int(user_id)
+    except (ValueError, TypeError):
+        user_id = 0
+
+    token_pair = jwt_manager.create_token_pair(user_id, username, role)
+    return token_pair["access_token"]
 
 
 def create_refresh_token(data: Dict[str, Any]) -> str:
-    """Создать refresh токен"""
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=JWT_REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire, "type": "refresh"})
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-    return encoded_jwt
+    """Создать refresh токен (DEPRECATED - используйте jwt_manager.create_token_pair)"""
+    logger.warning("⚠️  Используется устаревый метод create_refresh_token. Рекомендуется jwt_manager.create_token_pair")
+
+    # Для обратной совместимости
+    user_id = data.get("sub", 0)
+    username = data.get("username", "unknown")
+    role = data.get("role", "admin")
+
+    try:
+        user_id = int(user_id)
+    except (ValueError, TypeError):
+        user_id = 0
+
+    token_pair = jwt_manager.create_token_pair(user_id, username, role)
+    return token_pair["refresh_token"]
+
+
+def create_token_pair(user_id: int, username: str, role: str = "admin") -> Dict[str, Any]:
+    """Создать пару токенов (access + refresh) - РЕКОМЕНДУЕМЫЙ МЕТОД"""
+    return jwt_manager.create_token_pair(user_id, username, role)
 
 
 def verify_token(token: str, token_type: str = "access") -> Optional[TokenData]:
-    """Проверить токен"""
+    """Проверить токен с использованием production-ready менеджера"""
     try:
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        
-        # Проверяем тип токена
-        if payload.get("type") != token_type:
+        logger.info(f"🔍 Декодирование токена типа {token_type}: {token[:20]}...")
+
+        # Используем новый JWT менеджер
+        token_info = jwt_manager.verify_token(token, token_type)
+
+        if not token_info:
+            logger.warning(f"⚠️ Токен не прошел валидацию в JWT менеджере")
             return None
-        
-        user_id: int = payload.get("sub")
-        username: str = payload.get("username")
-        role: str = payload.get("role")
-        
-        if user_id is None:
-            return None
-        
-        return TokenData(user_id=user_id, username=username, role=role)
-    
-    except JWTError:
+
+        logger.info(f"🔍 Данные из токена: user_id={token_info.user_id}, username={token_info.username}, role={token_info.role}")
+
+        token_data = TokenData(
+            user_id=token_info.user_id,
+            username=token_info.username,
+            role=token_info.role
+        )
+
+        logger.info(f"✅ Токен успешно проверен для {token_info.username}")
+        return token_data
+
+    except Exception as e:
+        logger.error(f"❌ Неожиданная ошибка при проверке токена: {e}")
         return None
 
 
-def create_tokens(user_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Создать пару токенов"""
+def revoke_token(token: str) -> bool:
+    """Отозвать токен"""
+    return jwt_manager.revoke_token(token)
+
+
+def revoke_user_sessions(user_id: int) -> int:
+    """Отозвать все сессии пользователя"""
+    return jwt_manager.revoke_user_sessions(user_id)
+
+
+def get_jwt_stats() -> Dict[str, Any]:
+    """Получить статистику JWT"""
+    return jwt_manager.get_stats()
+
+
+def create_tokens(user: Dict[str, Any]) -> Dict[str, Any]:
+    """Создать пару токенов для пользователя"""
     access_token_expires = timedelta(minutes=JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
     
+    token_data = {
+        "sub": str(user["id"]),
+        "username": user["username"],
+        "role": user["role"]
+    }
+    
     access_token = create_access_token(
-        data={"sub": user_data["id"], "username": user_data["username"], "role": user_data["role"]},
+        data=token_data,
         expires_delta=access_token_expires
     )
     
-    refresh_token = create_refresh_token(
-        data={"sub": user_data["id"], "username": user_data["username"], "role": user_data["role"]}
-    )
+    refresh_token = create_refresh_token(data=token_data)
     
     return {
         "access_token": access_token,
@@ -105,80 +153,34 @@ async def authenticate_user(db, username: str, password: str) -> Optional[Dict[s
     return user
 
 
-def get_user_permissions(role: str) -> list:
-    """Получить разрешения пользователя по роли"""
-    permissions_map = {
-        "super_admin": ["*"],  # Все разрешения
-        "admin": [
-            "users.view", "users.edit", "users.manage_subscription",
-            "broadcasts.create", "broadcasts.send", "broadcasts.view",
-            "templates.create", "templates.edit", "templates.delete",
-            "statistics.view", "audit.view"
-        ],
-        "developer": [
-            "users.view", "statistics.view", "broadcasts.create", "broadcasts.view",
-            "templates.create", "templates.edit", "audit.view", "system.logs"
-        ],
-        "moderator": [
-            "users.view", "statistics.view", "broadcasts.view"
-        ]
-    }
-    
-    return permissions_map.get(role, [])
+def require_admin(user_id: int) -> bool:
+    """Проверить, является ли пользователь администратором"""
+    # Здесь можно добавить логику проверки прав администратора
+    # Пока что возвращаем True для всех пользователей
+    return True
 
 
 def check_permission(user_role: str, required_permission: str) -> bool:
-    """Проверить разрешение пользователя"""
-    user_permissions = get_user_permissions(user_role)
+    """Проверить права пользователя"""
+    # Базовая система прав
+    role_permissions = {
+        "super_admin": ["*"],  # Все права
+        "admin": [
+            "users.view", "users.edit", "users.delete",
+            "broadcasts.view", "broadcasts.create", "broadcasts.edit", "broadcasts.delete",
+            "statistics.view", "audit.view"
+        ],
+        "moderator": [
+            "users.view", "broadcasts.view", "broadcasts.create",
+            "statistics.view"
+        ]
+    }
+
+    user_permissions = role_permissions.get(user_role, [])
 
     # Супер админ имеет все права
     if "*" in user_permissions:
         return True
 
+    # Проверяем конкретное право
     return required_permission in user_permissions
-
-
-def require_admin(permission: str = None):
-    """
-    Декоратор для проверки прав администратора
-
-    Args:
-        permission: Требуемое разрешение (опционально)
-    """
-    from functools import wraps
-    from fastapi import Depends, HTTPException, status
-    from fastapi.security import HTTPBearer
-
-    security = HTTPBearer()
-
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            # Получаем токен из зависимостей
-            token = kwargs.get('token') or (args[0] if args else None)
-
-            if not token:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Токен не предоставлен"
-                )
-
-            # Проверяем токен
-            token_data = verify_token(token.credentials if hasattr(token, 'credentials') else str(token))
-            if not token_data:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Недействительный токен"
-                )
-
-            # Проверяем разрешения если указаны
-            if permission and not check_permission(token_data.role, permission):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Недостаточно прав для {permission}"
-                )
-
-            return await func(*args, **kwargs)
-
-        return wrapper
-    return decorator

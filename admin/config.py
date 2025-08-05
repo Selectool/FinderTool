@@ -31,7 +31,7 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
 # Основные настройки с учетом окружения
 if ENVIRONMENT == "development":
-    DEFAULT_SECRET_KEY = "dev-secret-key-auto-generated"
+    DEFAULT_SECRET_KEY = "your-super-secret-key-change-in-production"
     DEFAULT_DEBUG = "True"
     DEFAULT_HOST = "127.0.0.1"
 else:
@@ -46,7 +46,7 @@ PORT = int(os.getenv("ADMIN_PORT", "8080"))
 
 # JWT настройки с учетом окружения
 if ENVIRONMENT == "development":
-    DEFAULT_JWT_SECRET = "dev-jwt-secret-auto-generated"
+    DEFAULT_JWT_SECRET = "your-jwt-secret-key-change-in-production"
     DEFAULT_ACCESS_EXPIRE = "60"  # 1 час для разработки
     DEFAULT_REFRESH_EXPIRE = "30"  # 30 дней для разработки
 else:
@@ -58,6 +58,44 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", DEFAULT_JWT_SECRET)
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", DEFAULT_ACCESS_EXPIRE))
 JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", DEFAULT_REFRESH_EXPIRE))
+
+# ============ SECURITY VALIDATION ============
+def validate_security_keys():
+    """Валидация ключей безопасности для production-ready системы"""
+    import secrets
+    import hashlib
+
+    # Проверяем длину и сложность JWT ключа
+    if len(JWT_SECRET_KEY) < 32:
+        if ENVIRONMENT == "production":
+            raise ValueError("JWT_SECRET_KEY должен быть минимум 32 символа для production!")
+        else:
+            print("⚠️  ПРЕДУПРЕЖДЕНИЕ: JWT_SECRET_KEY слишком короткий для production")
+
+    # Проверяем, что не используются дефолтные ключи в production
+    default_patterns = [
+        "dev-", "test-", "auto-generated", "change-in-production",
+        "your-", "secret-key", "jwt-secret"
+    ]
+
+    if ENVIRONMENT == "production":
+        for pattern in default_patterns:
+            if pattern in JWT_SECRET_KEY.lower() or pattern in SECRET_KEY.lower():
+                raise ValueError(f"Обнаружен небезопасный паттерн '{pattern}' в ключах безопасности! "
+                               f"Измените ключи для production!")
+
+    # Проверяем энтропию ключей
+    jwt_entropy = len(set(JWT_SECRET_KEY))
+    if jwt_entropy < 16:
+        if ENVIRONMENT == "production":
+            raise ValueError("JWT_SECRET_KEY имеет низкую энтропию! Используйте более случайный ключ.")
+        else:
+            print(f"⚠️  ПРЕДУПРЕЖДЕНИЕ: JWT_SECRET_KEY имеет низкую энтропию ({jwt_entropy} уникальных символов)")
+
+    print(f"🔐 Валидация ключей безопасности: {'✅ ПРОЙДЕНА' if ENVIRONMENT != 'production' or jwt_entropy >= 16 else '❌ ПРОВАЛЕНА'}")
+
+# Выполняем валидацию при загрузке модуля
+validate_security_keys()
 
 # База данных (только PostgreSQL)
 DATABASE_URL = os.getenv("DATABASE_URL")

@@ -1,0 +1,50 @@
+# Dockerfile для Telegram Bot Service
+# Оптимизирован для Dokploy деплоя
+FROM python:3.11-slim
+
+# Устанавливаем системные зависимости
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    gcc \
+    g++ \
+    curl \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Создаем пользователя для безопасности
+RUN useradd --create-home --shell /bin/bash --uid 1000 app
+
+# Устанавливаем рабочую директорию
+WORKDIR /app
+
+# Копируем requirements и устанавливаем зависимости
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Копируем код приложения
+COPY . .
+
+# Создаем необходимые директории с правильными правами
+RUN mkdir -p /app/data /app/logs /app/database/backups && \
+    chown -R app:app /app && \
+    chmod -R 755 /app
+
+# Переключаемся на пользователя app
+USER app
+
+# Устанавливаем переменные окружения для production
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV ENVIRONMENT=production
+ENV DATABASE_TYPE=postgresql
+ENV SERVICE_TYPE=telegram-bot
+
+# Health check для Dokploy
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=5 \
+    CMD python -c "import asyncio; from bot.health_check import check_bot_health; exit(0 if asyncio.run(check_bot_health()) else 1)" || exit 1
+
+# Запускаем только Telegram бота
+CMD ["python", "-c", "import asyncio; from bot.main import main; asyncio.run(main())"]

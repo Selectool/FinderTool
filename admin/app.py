@@ -21,10 +21,11 @@ try:
         DEBUG, HOST, PORT, CORS_ORIGINS, ALLOWED_HOSTS,
         LOG_LEVEL, UPLOAD_DIR
     )
+    from config import DATABASE_URL
 except ImportError:
     from config import (
         DEBUG, HOST, PORT, CORS_ORIGINS, ALLOWED_HOSTS,
-        LOG_LEVEL, UPLOAD_DIR
+        LOG_LEVEL, UPLOAD_DIR, DATABASE_URL
     )
 
 # Импорты для админ-панели
@@ -141,11 +142,19 @@ async def log_requests(request: Request, call_next):
     return response
 
 
-# Middleware для добавления базы данных в request
+# Production-ready Database Middleware
+from .middleware.database_middleware import DatabaseConnectionMiddleware
+
+# Добавляем database middleware
+app.add_middleware(DatabaseConnectionMiddleware, database_url=DATABASE_URL)
+
+# Legacy middleware для обратной совместимости
 @app.middleware("http")
 async def add_db_to_request(request: Request, call_next):
-    """Добавление объекта базы данных в request"""
-    request.state.db = app.state.db
+    """Добавление объекта базы данных в request (legacy support)"""
+    if not hasattr(request.state, 'db'):
+        from database.universal_database import UniversalDatabase
+        request.state.db = UniversalDatabase(DATABASE_URL)
     response = await call_next(request)
     return response
 
@@ -257,23 +266,56 @@ async def app_info():
 # Проверка здоровья приложения
 @app.get("/api/health")
 async def health_check(request: Request):
-    """Проверка здоровья приложения"""
+    """Production-ready проверка здоровья приложения"""
     try:
         # Проверяем подключение к базе данных
         db = request.state.db
         stats = await db.get_stats()
-        
+
         return {
             "status": "healthy",
             "database": "connected",
-            "users_count": stats.get("total_users", 0)
+            "users_count": stats.get("total_users", 0),
+            "timestamp": time.time()
         }
     except Exception as e:
         logger.error("Health check failed", exc_info=e)
         return {
             "status": "unhealthy",
-            "error": str(e)
+            "error": str(e),
+            "timestamp": time.time()
         }
+
+# Детальная проверка здоровья базы данных
+@app.get("/api/health/database")
+async def database_health_check():
+    """Детальная проверка здоровья базы данных"""
+    from .middleware.database_middleware import get_health_checker
+
+    health_checker = get_health_checker(DATABASE_URL)
+    if not health_checker:
+        return {
+            "status": "error",
+            "message": "Health checker not initialized",
+            "timestamp": time.time()
+        }
+
+    return await health_checker.check_health()
+
+# Управление JWT сессиями
+@app.post("/api/auth/clear-sessions")
+async def clear_all_sessions():
+    """Очистить все JWT сессии (для смены ключей безопасности)"""
+    from .auth.jwt_manager import jwt_manager
+
+    cleared_count = jwt_manager.clear_all_sessions()
+
+    return {
+        "status": "success",
+        "message": f"Очищено {cleared_count} активных сессий",
+        "cleared_sessions": cleared_count,
+        "timestamp": time.time()
+    }
 
 
 if __name__ == "__main__":

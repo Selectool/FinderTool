@@ -1,0 +1,724 @@
+{% extends "base.html" %}
+
+{% block title %}Управление пользователями{% endblock %}
+{% block page_title %}Управление пользователями{% endblock %}
+
+{% block extra_css %}
+<style>
+    .user-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #007bff, #0056b3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+        font-size: 16px;
+    }
+    
+    .user-status {
+        font-size: 0.8rem;
+        padding: 2px 8px;
+        border-radius: 12px;
+    }
+    
+    .status-active { background: #d4edda; color: #155724; }
+    .status-subscribed { background: #d1ecf1; color: #0c5460; }
+    .status-blocked { background: #f8d7da; color: #721c24; }
+    .status-bot-blocked { background: #ffeaa7; color: #d63031; }
+    .status-unlimited { background: #fff3cd; color: #856404; }
+
+    .bulk-actions {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        display: none;
+    }
+
+    .bulk-actions.show {
+        display: block;
+    }
+
+    .user-checkbox {
+        margin-right: 0.5rem;
+    }
+    
+    .table-actions {
+        white-space: nowrap;
+    }
+    
+    .filters-card {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .stats-card {
+        text-align: center;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    }
+    
+    .stats-card h5 {
+        margin: 0;
+        font-size: 1.5rem;
+        font-weight: bold;
+    }
+    
+    .stats-card p {
+        margin: 0;
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Статистика -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="stats-card bg-primary text-white">
+            <h5>{{ pagination.total_items }}</h5>
+            <p>Всего пользователей</p>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card bg-success text-white">
+            <h5 id="activeCount">-</h5>
+            <p>Активные подписчики</p>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card bg-warning text-white">
+            <h5 id="unlimitedCount">-</h5>
+            <p>Безлимитные</p>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card bg-danger text-white">
+            <h5 id="blockedCount">-</h5>
+            <p>Заблокированные</p>
+        </div>
+    </div>
+</div>
+
+<!-- Фильтры и поиск -->
+<div class="filters-card">
+    <form method="get" class="row g-3">
+        <div class="col-md-4">
+            <label for="search" class="form-label">Поиск</label>
+            <input type="text" class="form-control" id="search" name="search" 
+                   value="{{ filters.search or '' }}" 
+                   placeholder="ID, имя пользователя, имя...">
+        </div>
+        <div class="col-md-3">
+            <label for="filter_type" class="form-label">Фильтр</label>
+            <select class="form-select" id="filter_type" name="filter_type">
+                <option value="">Все пользователи</option>
+                <option value="subscribed" {% if filters.filter_type == 'subscribed' %}selected{% endif %}>
+                    Подписчики
+                </option>
+                <option value="unlimited" {% if filters.filter_type == 'unlimited' %}selected{% endif %}>
+                    Безлимитные
+                </option>
+                <option value="active" {% if filters.filter_type == 'active' %}selected{% endif %}>
+                    Активные
+                </option>
+                <option value="blocked" {% if filters.filter_type == 'blocked' %}selected{% endif %}>
+                    Заблокированные админом
+                </option>
+                <option value="bot_blocked" {% if filters.filter_type == 'bot_blocked' %}selected{% endif %}>
+                    Заблокировали бота
+                </option>
+                <option value="new" {% if filters.filter_type == 'new' %}selected{% endif %}>
+                    Новые (за неделю)
+                </option>
+                <option value="role_admin" {% if filters.filter_type == 'role_admin' %}selected{% endif %}>
+                    Администраторы
+                </option>
+                <option value="role_senior_admin" {% if filters.filter_type == 'role_senior_admin' %}selected{% endif %}>
+                    Старшие администраторы
+                </option>
+                <option value="role_developer" {% if filters.filter_type == 'role_developer' %}selected{% endif %}>
+                    Разработчики
+                </option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label for="per_page" class="form-label">На странице</label>
+            <select class="form-select" id="per_page" name="per_page">
+                <option value="20" {% if pagination.per_page == 20 %}selected{% endif %}>20</option>
+                <option value="50" {% if pagination.per_page == 50 %}selected{% endif %}>50</option>
+                <option value="100" {% if pagination.per_page == 100 %}selected{% endif %}>100</option>
+            </select>
+        </div>
+        <div class="col-md-3 d-flex align-items-end">
+            <button type="submit" class="btn btn-primary me-2">
+                <i class="fas fa-search me-1"></i>Найти
+            </button>
+            <a href="/users" class="btn btn-outline-secondary">
+                <i class="fas fa-times me-1"></i>Сбросить
+            </a>
+        </div>
+    </form>
+</div>
+
+<!-- Массовые действия -->
+<div class="bulk-actions" id="bulkActions">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <strong>Выбрано: <span id="selectedCount">0</span> пользователей</strong>
+        </div>
+        <div>
+            <button class="btn btn-warning btn-sm" onclick="bulkAction('block')">
+                <i class="fas fa-ban me-1"></i>Заблокировать
+            </button>
+            <button class="btn btn-success btn-sm" onclick="bulkAction('unblock')">
+                <i class="fas fa-check me-1"></i>Разблокировать
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="bulkAction('delete')">
+                <i class="fas fa-trash me-1"></i>Удалить
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="clearSelection()">
+                <i class="fas fa-times me-1"></i>Отменить
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Действия -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <button class="btn btn-outline-primary" onclick="toggleSelectAll()">
+            <i class="fas fa-check-square me-1"></i>Выбрать все
+        </button>
+        <button class="btn btn-info" onclick="exportUsers()">
+            <i class="fas fa-download me-1"></i>Экспорт
+        </button>
+    </div>
+    <div>
+        <small class="text-muted">
+            Показано {{ users|length }} из {{ pagination.total_items }} пользователей
+        </small>
+    </div>
+</div>
+
+<!-- Таблица пользователей -->
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th width="50">
+                        <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                    </th>
+                    <th>Пользователь</th>
+                    <th>Роль</th>
+                    <th>Статус</th>
+                    <th>Запросы</th>
+                    <th>Регистрация</th>
+                    <th>Последняя активность</th>
+                    <th width="150">Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td>
+                        <input type="checkbox" class="user-checkbox" value="{{ user.user_id }}">
+                    </td>
+                    <td>
+                        <div class="d-flex align-items-center">
+                            <div class="user-avatar me-3">
+                                {{ (user.first_name or user.username or 'U')[0]|upper }}
+                            </div>
+                            <div>
+                                <div class="fw-bold">
+                                    {% if user.first_name or user.last_name %}
+                                        {{ user.first_name or '' }} {{ user.last_name or '' }}
+                                    {% else %}
+                                        {{ user.username or 'Без имени' }}
+                                    {% endif %}
+                                </div>
+                                <small class="text-muted">
+                                    ID: {{ user.user_id }}
+                                    {% if user.username %}• @{{ user.username }}{% endif %}
+                                </small>
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="d-flex flex-column">
+                            {% set role_display = user.role|default('user') %}
+                            {% if role_display == 'developer' %}
+                                <span class="badge bg-primary">🔧 Разработчик</span>
+                            {% elif role_display == 'senior_admin' %}
+                                <span class="badge bg-warning text-dark">👑 Старший админ</span>
+                            {% elif role_display == 'admin' %}
+                                <span class="badge bg-info">🛡️ Администратор</span>
+                            {% else %}
+                                <span class="badge bg-secondary">👤 Пользователь</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="d-flex flex-column">
+                            {% if user.blocked %}
+                                <span class="user-status status-blocked">Заблокирован</span>
+                            {% elif user.bot_blocked %}
+                                <span class="user-status status-bot-blocked">Заблокировал бота</span>
+                            {% elif user.unlimited_access %}
+                                <span class="user-status status-unlimited">Безлимитный</span>
+                            {% elif user.is_subscribed %}
+                                <span class="user-status status-subscribed">Подписчик</span>
+                            {% else %}
+                                <span class="user-status status-active">Активный</span>
+                            {% endif %}
+                            
+                            {% if user.subscription_end %}
+                                <small class="text-muted mt-1">
+                                    до {{ user.subscription_end.strftime('%d.%m.%Y') if user.subscription_end else 'Не указано' }}
+                                </small>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <div>
+                            <strong>{{ user.requests_used }}</strong>
+                            {% if not user.unlimited_access and not user.is_subscribed %}
+                                <small class="text-muted">/ 3</small>
+                            {% endif %}
+                        </div>
+                        {% if user.last_request %}
+                            <small class="text-muted">
+                                {{ user.last_request.strftime('%d.%m.%Y') if user.last_request else 'Нет данных' }}
+                            </small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if user.created_at %}
+                            <div>{{ user.created_at.strftime('%d.%m.%Y') }}</div>
+                            <small class="text-muted">{{ user.created_at.strftime('%H:%M') }}</small>
+                        {% else %}
+                            <div class="text-muted">Нет данных</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if user.last_request %}
+                            <div>{{ user.last_request.strftime('%d.%m.%Y') }}</div>
+                            <small class="text-muted">{{ user.last_request.strftime('%H:%M') }}</small>
+                        {% else %}
+                            <small class="text-muted">Нет активности</small>
+                        {% endif %}
+                    </td>
+                    <td class="table-actions">
+                        <div class="btn-group btn-group-sm">
+                            <a href="/users/{{ user.user_id }}" class="btn btn-outline-primary" title="Просмотр">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                            <button class="btn btn-outline-info" onclick="changeUserRole({{ user.user_id }})" title="Изменить роль">
+                                <i class="fas fa-user-tag"></i>
+                            </button>
+                            {% if user.blocked %}
+                                <button class="btn btn-outline-success" onclick="unblockUser({{ user.user_id }})" title="Разблокировать">
+                                    <i class="fas fa-unlock"></i>
+                                </button>
+                            {% else %}
+                                <button class="btn btn-outline-warning" onclick="blockUser({{ user.user_id }})" title="Заблокировать">
+                                    <i class="fas fa-ban"></i>
+                                </button>
+                            {% endif %}
+                            <button class="btn btn-outline-danger" onclick="deleteUser({{ user.user_id }})" title="Удалить">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Пагинация -->
+{% if pagination.total_pages > 1 %}
+<nav aria-label="Пагинация пользователей" class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if pagination.has_prev %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ pagination.prev_page }}{% if filters.search %}&search={{ filters.search }}{% endif %}{% if filters.filter_type %}&filter_type={{ filters.filter_type }}{% endif %}&per_page={{ pagination.per_page }}">
+                    <i class="fas fa-chevron-left"></i>
+                </a>
+            </li>
+        {% endif %}
+        
+        {% for page_num in range(1, pagination.total_pages + 1) %}
+            {% if page_num == pagination.current_page %}
+                <li class="page-item active">
+                    <span class="page-link">{{ page_num }}</span>
+                </li>
+            {% elif page_num <= 3 or page_num > pagination.total_pages - 3 or (page_num >= pagination.current_page - 1 and page_num <= pagination.current_page + 1) %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_num }}{% if filters.search %}&search={{ filters.search }}{% endif %}{% if filters.filter_type %}&filter_type={{ filters.filter_type }}{% endif %}&per_page={{ pagination.per_page }}">
+                        {{ page_num }}
+                    </a>
+                </li>
+            {% elif page_num == 4 or page_num == pagination.total_pages - 3 %}
+                <li class="page-item disabled">
+                    <span class="page-link">...</span>
+                </li>
+            {% endif %}
+        {% endfor %}
+        
+        {% if pagination.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ pagination.next_page }}{% if filters.search %}&search={{ filters.search }}{% endif %}{% if filters.filter_type %}&filter_type={{ filters.filter_type }}{% endif %}&per_page={{ pagination.per_page }}">
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+            </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Загрузка статистики
+async function loadStats() {
+    try {
+        console.log('Загружаем статистику...');
+        const data = await makeRequest('/api/users/analytics/');
+        console.log('Статистика получена:', data);
+
+        if (data && typeof data === 'object') {
+            document.getElementById('activeCount').textContent = data.subscribers || 0;
+            document.getElementById('unlimitedCount').textContent = data.unlimited_users || 0;
+            document.getElementById('blockedCount').textContent = data.blocked_users || 0;
+        } else {
+            console.warn('Получены некорректные данные статистики:', data);
+            setDefaultStats();
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки статистики:', error);
+        setDefaultStats();
+    }
+}
+
+// Установка значений по умолчанию
+function setDefaultStats() {
+    document.getElementById('activeCount').textContent = 0;
+    document.getElementById('unlimitedCount').textContent = 0;
+    document.getElementById('blockedCount').textContent = 0;
+}
+
+// Выбор всех пользователей
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAll');
+    const checkboxes = document.querySelectorAll('.user-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = selectAll.checked;
+        cb.dispatchEvent(new Event('change'));
+    });
+}
+
+// Обновление счетчика выбранных пользователей
+function updateSelectedCount() {
+    const selected = document.querySelectorAll('.user-checkbox:checked');
+    const count = selected.length;
+    document.getElementById('selectedCount').textContent = count;
+
+    const bulkActions = document.getElementById('bulkActions');
+    if (count > 0) {
+        bulkActions.classList.add('show');
+    } else {
+        bulkActions.classList.remove('show');
+    }
+}
+
+// Очистить выбор
+function clearSelection() {
+    document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = false);
+    document.getElementById('selectAll').checked = false;
+    updateSelectedCount();
+}
+
+// Массовые действия
+async function bulkAction(action) {
+    const selected = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => parseInt(cb.value));
+    if (selected.length === 0) {
+        alert('Выберите пользователей для выполнения действий');
+        return;
+    }
+
+    const actionNames = {
+        'block': 'заблокировать',
+        'unblock': 'разблокировать',
+        'delete': 'удалить'
+    };
+
+    if (!confirm(`Вы уверены, что хотите ${actionNames[action]} ${selected.length} пользователей?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/users/bulk-action', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                user_ids: selected,
+                action: action,
+                notes: `Массовое действие: ${actionNames[action]}`
+            })
+        });
+
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('Ошибка: ' + (error.detail || 'Неизвестная ошибка'));
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка при выполнении действия');
+    }
+}
+
+// Экспорт пользователей
+function exportUsers() {
+    const params = new URLSearchParams(window.location.search);
+    params.set('format', 'xlsx');
+    window.open('/api/users/export/?' + params.toString());
+}
+
+// Управление подпиской
+function manageSubscription(userId) {
+    // TODO: Показать модальное окно управления подпиской
+    console.log('Управление подпиской для пользователя:', userId);
+}
+
+// Блокировка пользователя
+async function blockUser(userId) {
+    if (!confirm('Вы уверены, что хотите заблокировать этого пользователя?')) {
+        return;
+    }
+
+    const notes = prompt('Причина блокировки (необязательно):') || '';
+
+    try {
+        const formData = new FormData();
+        formData.append('notes', notes);
+
+        const response = await fetch(`/users/${userId}/block`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert('Ошибка при блокировке пользователя');
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка при блокировке пользователя');
+    }
+}
+
+// Разблокировка пользователя
+async function unblockUser(userId) {
+    if (!confirm('Вы уверены, что хотите разблокировать этого пользователя?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/users/${userId}/unblock`, {
+            method: 'POST'
+        });
+
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert('Ошибка при разблокировке пользователя');
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка при разблокировке пользователя');
+    }
+}
+
+// Удаление пользователя
+async function deleteUser(userId) {
+    if (!confirm('Вы уверены, что хотите ПОЛНОСТЬЮ УДАЛИТЬ этого пользователя?\n\nЭто действие нельзя отменить!')) {
+        return;
+    }
+
+    if (!confirm('Подтвердите удаление пользователя. Все его данные будут безвозвратно удалены!')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/users/${userId}/delete`, {
+            method: 'POST'
+        });
+
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert('Ошибка при удалении пользователя');
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка при удалении пользователя');
+    }
+}
+
+// Отправка сообщения
+function sendMessage(userId) {
+    // TODO: Показать модальное окно отправки сообщения
+    console.log('Отправка сообщения пользователю:', userId);
+}
+
+// Инициализация обработчиков событий
+document.addEventListener('DOMContentLoaded', function() {
+    // Обработчики для чекбоксов
+    document.querySelectorAll('.user-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', updateSelectedCount);
+    });
+
+    // Инициальное обновление счетчика
+    updateSelectedCount();
+});
+
+// Изменение роли пользователя
+async function changeUserRole(userId) {
+    try {
+        // Получаем информацию о пользователе и доступных ролях
+        const [userResponse, rolesResponse] = await Promise.all([
+            fetch(`/api/roles/user/${userId}`),
+            fetch('/api/roles/available')
+        ]);
+
+        if (!userResponse.ok || !rolesResponse.ok) {
+            alert('Ошибка получения данных о пользователе');
+            return;
+        }
+
+        const userInfo = await userResponse.json();
+        const availableRoles = await rolesResponse.json();
+
+        // Создаем модальное окно для выбора роли
+        let roleOptions = '';
+        availableRoles.forEach(role => {
+            const selected = role.value === userInfo.current_role ? 'selected' : '';
+            roleOptions += `<option value="${role.value}" ${selected}>${role.display_name}</option>`;
+        });
+
+        const modalHtml = `
+            <div class="modal fade" id="roleChangeModal" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Изменение роли пользователя</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <strong>Пользователь:</strong> ${userInfo.first_name || userInfo.username || 'Без имени'} (ID: ${userInfo.user_id})
+                            </div>
+                            <div class="mb-3">
+                                <strong>Текущая роль:</strong> ${userInfo.role_display_name}
+                            </div>
+                            <div class="mb-3">
+                                <label for="newRole" class="form-label">Новая роль:</label>
+                                <select class="form-select" id="newRole">
+                                    ${roleOptions}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label for="roleChangeReason" class="form-label">Причина изменения (необязательно):</label>
+                                <textarea class="form-control" id="roleChangeReason" rows="3"></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                            <button type="button" class="btn btn-primary" onclick="confirmRoleChange(${userId})">Изменить роль</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Удаляем предыдущее модальное окно, если есть
+        const existingModal = document.getElementById('roleChangeModal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        // Добавляем модальное окно в DOM
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+        // Показываем модальное окно
+        const modal = new bootstrap.Modal(document.getElementById('roleChangeModal'));
+        modal.show();
+
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка при получении данных о пользователе');
+    }
+}
+
+// Подтверждение изменения роли
+async function confirmRoleChange(userId) {
+    const newRole = document.getElementById('newRole').value;
+    const reason = document.getElementById('roleChangeReason').value;
+
+    if (!newRole) {
+        alert('Выберите новую роль');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/roles/change', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                user_id: userId,
+                new_role: newRole,
+                reason: reason
+            })
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            // Закрываем модальное окно
+            const modal = bootstrap.Modal.getInstance(document.getElementById('roleChangeModal'));
+            modal.hide();
+
+            // Перезагружаем страницу
+            location.reload();
+        } else {
+            alert('Ошибка: ' + (result.detail || 'Неизвестная ошибка'));
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка при изменении роли');
+    }
+}
+
+// Загружаем статистику при загрузке страницы
+document.addEventListener('DOMContentLoaded', loadStats);
+</script>
+{% endblock %}

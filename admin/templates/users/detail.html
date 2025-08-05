@@ -1,0 +1,797 @@
+{% extends "base.html" %} {% block title %}{{ page_title }}{% endblock %} {%
+block page_title %}{{ page_title }}{% endblock %} {% block extra_css %}
+<style>
+	.user-avatar-large {
+		width: 80px;
+		height: 80px;
+		border-radius: 50%;
+		background: linear-gradient(135deg, #007bff, #0056b3);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: white;
+		font-weight: bold;
+		font-size: 2rem;
+		margin-bottom: 1rem;
+	}
+
+	.stat-card {
+		background: white;
+		border: 1px solid #dee2e6;
+		border-radius: 8px;
+		padding: 1.5rem;
+		text-align: center;
+		margin-bottom: 1rem;
+		transition: transform 0.2s;
+	}
+
+	.stat-card:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+	}
+
+	.stat-value {
+		font-size: 2rem;
+		font-weight: bold;
+		margin-bottom: 0.5rem;
+	}
+
+	.stat-label {
+		color: #6c757d;
+		font-size: 0.9rem;
+	}
+
+	.timeline-item {
+		border-left: 3px solid #007bff;
+		padding-left: 1rem;
+		margin-bottom: 1rem;
+		position: relative;
+	}
+
+	.timeline-item::before {
+		content: '';
+		position: absolute;
+		left: -6px;
+		top: 0;
+		width: 9px;
+		height: 9px;
+		border-radius: 50%;
+		background: #007bff;
+	}
+
+	.timeline-date {
+		color: #6c757d;
+		font-size: 0.85rem;
+	}
+
+	.user-status-badge {
+		font-size: 0.9rem;
+		padding: 4px 12px;
+		border-radius: 20px;
+		font-weight: 500;
+	}
+
+	.status-active {
+		background: #d4edda;
+		color: #155724;
+	}
+	.status-subscribed {
+		background: #d1ecf1;
+		color: #0c5460;
+	}
+	.status-blocked {
+		background: #f8d7da;
+		color: #721c24;
+	}
+	.status-unlimited {
+		background: #fff3cd;
+		color: #856404;
+	}
+	.status-developer {
+		background: #e2d9f3;
+		color: #6f42c1;
+	}
+	.status-senior-admin {
+		background: #ffeaa7;
+		color: #fd7e14;
+	}
+	.status-admin {
+		background: #d1ecf1;
+		color: #17a2b8;
+	}
+	.status-user {
+		background: #e2e3e5;
+		color: #6c757d;
+	}
+</style>
+{% endblock %} {% block content %}
+<div class="row">
+	<!-- Основная информация -->
+	<div class="col-md-4">
+		<div class="card">
+			<div class="card-body text-center">
+				<div class="user-avatar-large mx-auto">
+					{{ (user.first_name or user.username or 'U')[0]|upper }}
+				</div>
+
+				<h4 class="card-title">
+					{% if user.first_name or user.last_name %} {{ user.first_name or '' }}
+					{{ user.last_name or '' }} {% else %} {{ user.username or 'Без имени'
+					}} {% endif %}
+				</h4>
+
+				<p class="text-muted">
+					ID: {{ user.user_id }} {% if user.username %}• @{{ user.username }}{%
+					endif %}
+				</p>
+
+				<!-- Роль пользователя -->
+				<div class="mb-3">
+					{% set role_info = { 'developer': {'name': 'Разработчик', 'icon': 'fas
+					fa-code', 'class': 'status-developer'}, 'senior_admin': {'name':
+					'Старший админ', 'icon': 'fas fa-crown', 'class':
+					'status-senior-admin'}, 'admin': {'name': 'Администратор', 'icon':
+					'fas fa-shield-alt', 'class': 'status-admin'}, 'user': {'name':
+					'Пользователь', 'icon': 'fas fa-user', 'class': 'status-user'} } %} {%
+					set current_role = role_info.get(user.role or 'user',
+					role_info['user']) %}
+
+					<span class="user-status-badge {{ current_role.class }}">
+						<i class="{{ current_role.icon }} me-1"></i>{{ current_role.name }}
+					</span>
+				</div>
+
+				<!-- Статус пользователя -->
+				<div class="mb-3">
+					{% if user.blocked %}
+					<span class="user-status-badge status-blocked">
+						<i class="fas fa-ban me-1"></i>Заблокирован
+					</span>
+					{% elif user.unlimited_access %}
+					<span class="user-status-badge status-unlimited">
+						<i class="fas fa-infinity me-1"></i>Безлимитный доступ
+					</span>
+					{% elif user.is_subscribed %}
+					<span class="user-status-badge status-subscribed">
+						<i class="fas fa-crown me-1"></i>Подписчик
+					</span>
+					{% else %}
+					<span class="user-status-badge status-active">
+						<i class="fas fa-user me-1"></i>Обычный пользователь
+					</span>
+					{% endif %}
+				</div>
+
+				<!-- Действия -->
+				<div class="d-grid gap-2">
+					<button class="btn btn-primary" id="manageSubscriptionBtn">
+						<i class="fas fa-crown me-2"></i>Управление подпиской
+					</button>
+					{% if user.unlimited_access %}
+					<button class="btn btn-warning" id="revokeUnlimitedBtn">
+						<i class="fas fa-infinity me-2"></i>Отозвать безлимит
+					</button>
+					{% else %}
+					<button class="btn btn-info" id="grantUnlimitedBtn">
+						<i class="fas fa-infinity me-2"></i>Выдать безлимит
+					</button>
+					{% endif %}
+					<button class="btn btn-success" id="sendMessageBtn">
+						<i class="fas fa-envelope me-2"></i>Отправить сообщение
+					</button>
+					{% if user.blocked %}
+					<button class="btn btn-warning" id="unblockUserBtn">
+						<i class="fas fa-unlock me-2"></i>Разблокировать
+					</button>
+					{% else %}
+					<button class="btn btn-danger" id="blockUserBtn">
+						<i class="fas fa-ban me-2"></i>Заблокировать
+					</button>
+					{% endif %}
+				</div>
+			</div>
+		</div>
+
+		<!-- Дополнительная информация -->
+		<div class="card mt-3">
+			<div class="card-header">
+				<h6 class="card-title mb-0">
+					<i class="fas fa-info-circle me-2"></i>Дополнительная информация
+				</h6>
+			</div>
+			<div class="card-body">
+				<div class="row mb-2">
+					<div class="col-sm-6"><strong>Регистрация:</strong></div>
+					<div class="col-sm-6">
+						{{ user.created_at.strftime('%d.%m.%Y %H:%M') }}
+					</div>
+				</div>
+
+				{% if user.subscription_end %}
+				<div class="row mb-2">
+					<div class="col-sm-6"><strong>Подписка до:</strong></div>
+					<div class="col-sm-6">
+						{{ user.subscription_end.strftime('%d.%m.%Y') }}
+					</div>
+				</div>
+				{% endif %} {% if user.last_request %}
+				<div class="row mb-2">
+					<div class="col-sm-6"><strong>Последний запрос:</strong></div>
+					<div class="col-sm-6">
+						{{ user.last_request.strftime('%d.%m.%Y %H:%M') }}
+					</div>
+				</div>
+				{% endif %} {% if user.referrer_id %}
+				<div class="row mb-2">
+					<div class="col-sm-6"><strong>Пригласил:</strong></div>
+					<div class="col-sm-6">
+						<a href="/users/{{ user.referrer_id }}"
+							>ID {{ user.referrer_id }}</a
+						>
+					</div>
+				</div>
+				{% endif %}
+
+				<div class="row mb-2">
+					<div class="col-sm-6"><strong>Источник:</strong></div>
+					<div class="col-sm-6">{{ user.registration_source or 'bot' }}</div>
+				</div>
+
+				{% if user.notes %}
+				<div class="row">
+					<div class="col-12">
+						<strong>Заметки:</strong>
+						<p class="mt-1 mb-0">{{ user.notes }}</p>
+					</div>
+				</div>
+				{% endif %}
+			</div>
+		</div>
+	</div>
+
+	<!-- Статистика -->
+	<div class="col-md-8">
+		<div class="row">
+			<div class="col-md-3">
+				<div class="stat-card">
+					<div class="stat-value text-primary">
+						{{ stats.total_requests or 0 }}
+					</div>
+					<div class="stat-label">Всего запросов</div>
+				</div>
+			</div>
+			<div class="col-md-3">
+				<div class="stat-card">
+					<div class="stat-value text-success">
+						{{ stats.requests_today or 0 }}
+					</div>
+					<div class="stat-label">Сегодня</div>
+				</div>
+			</div>
+			<div class="col-md-3">
+				<div class="stat-card">
+					<div class="stat-value text-info">{{ stats.requests_week or 0 }}</div>
+					<div class="stat-label">За неделю</div>
+				</div>
+			</div>
+			<div class="col-md-3">
+				<div class="stat-card">
+					<div class="stat-value text-warning">
+						{{ stats.requests_month or 0 }}
+					</div>
+					<div class="stat-label">За месяц</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- История запросов -->
+		<div class="card">
+			<div class="card-header">
+				<h6 class="card-title mb-0">
+					<i class="fas fa-history me-2"></i>История запросов
+				</h6>
+			</div>
+			<div class="card-body">
+				{% if requests_history %}
+				<div class="timeline">
+					{% for request in requests_history %}
+					<div class="timeline-item">
+						<div class="d-flex justify-content-between align-items-start">
+							<div>
+								<h6 class="mb-1">Поиск каналов</h6>
+								<p class="mb-1">
+									Запрос: {{ request.channels_input[:100] }}{% if
+									request.channels_input|length > 100 %}...{% endif %}
+								</p>
+								<div class="timeline-date">
+									{{ request.created_at.strftime('%d.%m.%Y %H:%M') }}
+								</div>
+							</div>
+							<div>
+								<button
+									class="btn btn-sm btn-outline-primary"
+									onclick="showRequestDetails({{ request.id }})"
+								>
+									<i class="fas fa-eye"></i>
+								</button>
+							</div>
+						</div>
+					</div>
+					{% endfor %}
+				</div>
+
+				{% if requests_history|length >= 10 %}
+				<div class="text-center mt-3">
+					<button class="btn btn-outline-primary" onclick="loadMoreRequests()">
+						<i class="fas fa-plus me-2"></i>Показать больше
+					</button>
+				</div>
+				{% endif %} {% else %}
+				<div class="text-center text-muted py-4">
+					<i class="fas fa-inbox fa-3x mb-3"></i>
+					<p>Пользователь еще не делал запросов</p>
+				</div>
+				{% endif %}
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- Модальные окна будут добавлены позже -->
+{% endblock %} {% block extra_js %}
+<script>
+	const userId = {{ user.user_id }};
+
+	// Управление подпиской - Production-ready версия
+	async function manageSubscription() {
+	    const isSubscribed = {% if user.is_subscribed %}true{% else %}false{% endif %};
+
+	    // Создаем модальное окно для управления подпиской
+	    const modal = document.createElement('div');
+	    modal.className = 'modal fade';
+	    modal.id = 'subscriptionModal';
+	    modal.setAttribute('tabindex', '-1');
+
+	    const currentDate = new Date();
+	    const futureDate = new Date(currentDate.getTime() + (30 * 24 * 60 * 60 * 1000));
+
+	    modal.innerHTML = `
+	        <div class="modal-dialog">
+	            <div class="modal-content">
+	                <div class="modal-header">
+	                    <h5 class="modal-title">
+	                        <i class="fas fa-crown me-2"></i>
+	                        Управление подпиской
+	                    </h5>
+	                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+	                </div>
+	                <div class="modal-body">
+	                    <div class="mb-3">
+	                        <label class="form-label">Действие:</label>
+	                        <select class="form-select" id="subscriptionAction">
+	                            <option value="activate" ${!isSubscribed ? 'selected' : ''}>Активировать подписку</option>
+	                            <option value="extend" ${isSubscribed ? 'selected' : ''}>Продлить подписку</option>
+	                            <option value="cancel" ${isSubscribed ? '' : 'disabled'}>Отменить подписку</option>
+	                        </select>
+	                    </div>
+	                    <div class="mb-3" id="durationGroup">
+	                        <label class="form-label">Длительность (дни):</label>
+	                        <select class="form-select" id="subscriptionDuration">
+	                            <option value="7">7 дней</option>
+	                            <option value="30" selected>30 дней</option>
+	                            <option value="90">90 дней</option>
+	                            <option value="365">365 дней</option>
+	                            <option value="custom">Другое</option>
+	                        </select>
+	                    </div>
+	                    <div class="mb-3" id="customDurationGroup" style="display: none;">
+	                        <label class="form-label">Количество дней:</label>
+	                        <input type="number" class="form-control" id="customDuration" min="1" max="3650" value="30">
+	                    </div>
+	                    <div class="alert alert-info">
+	                        <i class="fas fa-info-circle me-2"></i>
+	                        <span id="subscriptionInfo">Подписка будет активна до ${futureDate.toLocaleDateString('ru-RU')}</span>
+	                    </div>
+	                </div>
+	                <div class="modal-footer">
+	                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+	                    <button type="button" class="btn btn-primary" id="confirmSubscription">
+	                        <i class="fas fa-check me-2"></i>Применить
+	                    </button>
+	                </div>
+	            </div>
+	        </div>
+	    `;
+
+	    document.body.appendChild(modal);
+
+	    // Обработчики событий
+	    const actionSelect = modal.querySelector('#subscriptionAction');
+	    const durationSelect = modal.querySelector('#subscriptionDuration');
+	    const customDurationGroup = modal.querySelector('#customDurationGroup');
+	    const customDurationInput = modal.querySelector('#customDuration');
+	    const subscriptionInfo = modal.querySelector('#subscriptionInfo');
+	    const durationGroup = modal.querySelector('#durationGroup');
+
+	    function updateInfo() {
+	        const action = actionSelect.value;
+	        const duration = durationSelect.value === 'custom' ? customDurationInput.value : durationSelect.value;
+
+	        if (action === 'cancel') {
+	            durationGroup.style.display = 'none';
+	            subscriptionInfo.textContent = 'Подписка будет отменена немедленно';
+	        } else {
+	            durationGroup.style.display = 'block';
+	            const targetDate = new Date(currentDate.getTime() + (parseInt(duration) * 24 * 60 * 60 * 1000));
+	            subscriptionInfo.textContent = `Подписка будет активна до ${targetDate.toLocaleDateString('ru-RU')}`;
+	        }
+	    }
+
+	    actionSelect.addEventListener('change', updateInfo);
+	    durationSelect.addEventListener('change', function() {
+	        customDurationGroup.style.display = this.value === 'custom' ? 'block' : 'none';
+	        updateInfo();
+	    });
+	    customDurationInput.addEventListener('input', updateInfo);
+
+	    // Обработчик подтверждения
+	    modal.querySelector('#confirmSubscription').addEventListener('click', async function() {
+	        const action = actionSelect.value;
+	        const duration = durationSelect.value === 'custom' ? customDurationInput.value : durationSelect.value;
+
+	        try {
+	            const response = await makeRequest(`/api/users/${userId}/subscription`, {
+	                method: 'POST',
+	                headers: {
+	                    'Content-Type': 'application/json'
+	                },
+	                body: JSON.stringify({
+	                    action: action,
+	                    duration_days: parseInt(duration)
+	                })
+	            });
+
+	            if (response.success) {
+	                showNotification(response.message, 'success');
+	                setTimeout(() => location.reload(), 1500);
+	            } else {
+	                showNotification('Ошибка: ' + response.message, 'error');
+	            }
+	        } catch (error) {
+	            console.error('Ошибка управления подпиской:', error);
+	            showNotification('Произошла ошибка при управлении подпиской', 'error');
+	        }
+
+	        bootstrap.Modal.getInstance(modal).hide();
+	    });
+
+	    // Показываем модальное окно
+	    const bsModal = new bootstrap.Modal(modal);
+	    bsModal.show();
+
+	    // Удаляем модальное окно после закрытия
+	    modal.addEventListener('hidden.bs.modal', () => {
+	        document.body.removeChild(modal);
+	    });
+
+	    updateInfo();
+	}
+
+	// Выдать безлимитный доступ - Production-ready функция
+	async function grantUnlimited() {
+	    if (!confirm('Вы уверены, что хотите выдать безлимитный доступ этому пользователю?')) {
+	        return;
+	    }
+
+	    try {
+	        const response = await makeRequest(`/api/users/${userId}`, {
+	            method: 'PUT',
+	            headers: {
+	                'Content-Type': 'application/json'
+	            },
+	            body: JSON.stringify({
+	                unlimited_access: true,
+	                notes: `Безлимитный доступ выдан администратором ${new Date().toLocaleString('ru-RU')}`
+	            })
+	        });
+
+	        if (response.user_id) {
+	            showNotification('Безлимитный доступ успешно выдан', 'success');
+	            setTimeout(() => location.reload(), 1500);
+	        } else {
+	            showNotification('Ошибка при выдаче безлимитного доступа', 'error');
+	        }
+	    } catch (error) {
+	        console.error('Ошибка выдачи безлимитного доступа:', error);
+	        showNotification('Произошла ошибка при выдаче безлимитного доступа', 'error');
+	    }
+	}
+
+	// Отозвать безлимитный доступ - Production-ready функция
+	async function revokeUnlimited() {
+	    if (!confirm('Вы уверены, что хотите отозвать безлимитный доступ у этого пользователя?')) {
+	        return;
+	    }
+
+	    try {
+	        const response = await makeRequest(`/api/users/${userId}`, {
+	            method: 'PUT',
+	            headers: {
+	                'Content-Type': 'application/json'
+	            },
+	            body: JSON.stringify({
+	                unlimited_access: false,
+	                notes: `Безлимитный доступ отозван администратором ${new Date().toLocaleString('ru-RU')}`
+	            })
+	        });
+
+	        if (response.user_id) {
+	            showNotification('Безлимитный доступ успешно отозван', 'success');
+	            setTimeout(() => location.reload(), 1500);
+	        } else {
+	            showNotification('Ошибка при отзыве безлимитного доступа', 'error');
+	        }
+	    } catch (error) {
+	        console.error('Ошибка отзыва безлимитного доступа:', error);
+	        showNotification('Произошла ошибка при отзыве безлимитного доступа', 'error');
+	    }
+	}
+
+	// Отправка сообщения
+	function sendMessage() {
+	    {% if user.username %}
+	        // Открываем Telegram с пользователем
+	        window.open('https://t.me/{{ user.username }}', '_blank');
+	    {% else %}
+	        // Показываем ID для ручного поиска
+	        const message = `ID пользователя: {{ user.user_id }}\n\nСкопируйте ID и найдите пользователя в Telegram вручную.`;
+	        if (navigator.clipboard) {
+	            navigator.clipboard.writeText('{{ user.user_id }}').then(() => {
+	                alert(message + '\n\nID скопирован в буфер обмена.');
+	            });
+	        } else {
+	            alert(message);
+	        }
+	    {% endif %}
+	}
+
+	// Блокировка пользователя
+	async function blockUser() {
+	    if (!confirm('Вы уверены, что хотите заблокировать этого пользователя?')) {
+	        return;
+	    }
+
+	    try {
+	        const response = await fetch(`/api/users/bulk-action`, {
+	            method: 'POST',
+	            headers: {
+	                'Content-Type': 'application/json',
+	            },
+	            body: JSON.stringify({
+	                user_ids: [userId],
+	                action: 'block',
+	                notes: 'Заблокирован через админ-панель'
+	            })
+	        });
+
+	        if (response.ok) {
+	            location.reload();
+	        } else {
+	            alert('Ошибка при блокировке пользователя');
+	        }
+	    } catch (error) {
+	        console.error('Ошибка:', error);
+	        alert('Ошибка при блокировке пользователя');
+	    }
+	}
+
+	// Разблокировка пользователя
+	async function unblockUser() {
+	    if (!confirm('Вы уверены, что хотите разблокировать этого пользователя?')) {
+	        return;
+	    }
+
+	    try {
+	        const response = await fetch(`/api/users/bulk-action`, {
+	            method: 'POST',
+	            headers: {
+	                'Content-Type': 'application/json',
+	            },
+	            body: JSON.stringify({
+	                user_ids: [userId],
+	                action: 'unblock',
+	                notes: 'Разблокирован через админ-панель'
+	            })
+	        });
+
+	        if (response.ok) {
+	            location.reload();
+	        } else {
+	            alert('Ошибка при разблокировке пользователя');
+	        }
+	    } catch (error) {
+	        console.error('Ошибка:', error);
+	        alert('Ошибка при разблокировке пользователя');
+	    }
+	}
+
+	// Инициализация event listeners
+	document.addEventListener('DOMContentLoaded', function() {
+		// Управление подпиской
+		const manageSubscriptionBtn = document.getElementById('manageSubscriptionBtn');
+		if (manageSubscriptionBtn) {
+			manageSubscriptionBtn.addEventListener('click', manageSubscription);
+		}
+
+		// Управление безлимитом
+		const grantUnlimitedBtn = document.getElementById('grantUnlimitedBtn');
+		if (grantUnlimitedBtn) {
+			grantUnlimitedBtn.addEventListener('click', grantUnlimited);
+		}
+
+		const revokeUnlimitedBtn = document.getElementById('revokeUnlimitedBtn');
+		if (revokeUnlimitedBtn) {
+			revokeUnlimitedBtn.addEventListener('click', revokeUnlimited);
+		}
+
+		// Отправка сообщения
+		const sendMessageBtn = document.getElementById('sendMessageBtn');
+		if (sendMessageBtn) {
+			sendMessageBtn.addEventListener('click', sendMessage);
+		}
+
+		// Блокировка/разблокировка
+		const blockUserBtn = document.getElementById('blockUserBtn');
+		if (blockUserBtn) {
+			blockUserBtn.addEventListener('click', blockUser);
+		}
+
+		const unblockUserBtn = document.getElementById('unblockUserBtn');
+		if (unblockUserBtn) {
+			unblockUserBtn.addEventListener('click', unblockUser);
+		}
+	});
+
+	// Показать детали запроса
+	async function showRequestDetails(requestId) {
+	    try {
+	        // Получаем детали запроса через API
+	        const requestData = await makeRequest(`/api/users/requests/${requestId}`);
+
+	        // Создаем модальное окно с деталями
+	        const modal = document.createElement('div');
+	        modal.className = 'modal fade';
+	        modal.id = 'requestDetailsModal';
+	        modal.setAttribute('tabindex', '-1');
+
+	        // Форматируем входные каналы
+	        const inputChannels = Array.isArray(requestData.channels_input)
+	            ? requestData.channels_input
+	            : JSON.parse(requestData.channels_input || '[]');
+
+	        // Форматируем результаты
+	        const results = Array.isArray(requestData.results)
+	            ? requestData.results
+	            : JSON.parse(requestData.results || '[]');
+
+	        // Форматируем дату
+	        const createdAt = new Date(requestData.created_at).toLocaleString('ru-RU');
+
+	        modal.innerHTML = `
+	            <div class="modal-dialog modal-lg">
+	                <div class="modal-content">
+	                    <div class="modal-header">
+	                        <h5 class="modal-title">
+	                            <i class="fas fa-search me-2"></i>
+	                            Детали запроса #${requestId}
+	                        </h5>
+	                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+	                    </div>
+	                    <div class="modal-body">
+	                        <div class="row">
+	                            <div class="col-md-6">
+	                                <h6><i class="fas fa-clock me-2"></i>Время запроса</h6>
+	                                <p class="text-muted">${createdAt}</p>
+
+	                                <h6><i class="fas fa-list me-2"></i>Входные каналы</h6>
+	                                <div class="bg-light p-3 rounded">
+	                                    ${inputChannels.map(channel => `
+	                                        <span class="badge bg-primary me-1 mb-1">${channel}</span>
+	                                    `).join('')}
+	                                </div>
+	                            </div>
+	                            <div class="col-md-6">
+	                                <h6><i class="fas fa-chart-bar me-2"></i>Статистика</h6>
+	                                <ul class="list-unstyled">
+	                                    <li><strong>Найдено каналов:</strong> ${results.length}</li>
+	                                    <li><strong>Входных каналов:</strong> ${inputChannels.length}</li>
+	                                </ul>
+	                            </div>
+	                        </div>
+
+	                        <hr>
+
+	                        <h6><i class="fas fa-bullseye me-2"></i>Найденные похожие каналы</h6>
+	                        <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+	                            <table class="table table-sm">
+	                                <thead class="table-light">
+	                                    <tr>
+	                                        <th>Канал</th>
+	                                        <th>Подписчики</th>
+	                                        <th>Схожесть</th>
+	                                        <th>Ссылка</th>
+	                                    </tr>
+	                                </thead>
+	                                <tbody>
+	                                    ${results.map(result => `
+	                                        <tr>
+	                                            <td>
+	                                                <strong>${result.title || result.name || 'Без названия'}</strong>
+	                                                <br>
+	                                                <small class="text-muted">@${result.username || 'unknown'}</small>
+	                                            </td>
+	                                            <td>
+	                                                <span class="badge bg-info">
+	                                                    ${result.subscribers_count ? result.subscribers_count.toLocaleString() : 'N/A'}
+	                                                </span>
+	                                            </td>
+	                                            <td>
+	                                                <div class="progress" style="height: 20px;">
+	                                                    <div class="progress-bar" role="progressbar"
+	                                                         style="width: ${(result.similarity || 0) * 100}%">
+	                                                        ${Math.round((result.similarity || 0) * 100)}%
+	                                                    </div>
+	                                                </div>
+	                                            </td>
+	                                            <td>
+	                                                ${result.username ? `
+	                                                    <a href="https://t.me/${result.username}" target="_blank" class="btn btn-sm btn-outline-primary">
+	                                                        <i class="fab fa-telegram-plane"></i>
+	                                                    </a>
+	                                                ` : '<span class="text-muted">N/A</span>'}
+	                                            </td>
+	                                        </tr>
+	                                    `).join('')}
+	                                </tbody>
+	                            </table>
+	                        </div>
+
+	                        ${results.length === 0 ?
+	                            '<div class="text-center text-muted py-4">' +
+	                                '<i class="fas fa-search fa-3x mb-3"></i>' +
+	                                '<p>Похожие каналы не найдены</p>' +
+	                            '</div>'
+	                            : ''}
+	                    </div>
+	                    <div class="modal-footer">
+	                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+	                    </div>
+	                </div>
+	            </div>
+	        `;
+
+	        // Добавляем модальное окно в DOM
+	        document.body.appendChild(modal);
+
+	        // Показываем модальное окно
+	        const bsModal = new bootstrap.Modal(modal);
+	        bsModal.show();
+
+	        // Удаляем модальное окно после закрытия
+	        modal.addEventListener('hidden.bs.modal', () => {
+	            document.body.removeChild(modal);
+	        });
+
+	    } catch (error) {
+	        console.error('Ошибка загрузки деталей запроса:', error);
+	        alert('Не удалось загрузить детали запроса');
+	    }
+	}
+
+	// Загрузить больше запросов
+	function loadMoreRequests() {
+	    // TODO: Загрузить дополнительные запросы через AJAX
+	    console.log('Загрузить больше запросов для пользователя:', userId);
+	}
+</script>
+{% endblock %}

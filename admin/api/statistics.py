@@ -40,13 +40,13 @@ async def get_dashboard_stats(
 
     # Конверсия в подписчики
     conversion_rate = 0.0
-    if user_stats["total_users"] > 0:
-        conversion_rate = round((user_stats["active_subscribers"] / user_stats["total_users"]) * 100, 2)
+    if user_stats.get("total", 0) > 0:
+        conversion_rate = round((user_stats.get("subscribed", 0) / user_stats["total"]) * 100, 2)
 
     # Средние запросы на пользователя
     avg_requests_per_user = 0.0
-    if user_stats["total_users"] > 0:
-        avg_requests_per_user = round(request_stats["total_requests"] / user_stats["total_users"], 2)
+    if user_stats.get("total", 0) > 0:
+        avg_requests_per_user = round(request_stats.get("total", 0) / user_stats["total"], 2)
 
     # Эффективность рассылок
     broadcast_success_rate = 0.0
@@ -57,19 +57,19 @@ async def get_dashboard_stats(
 
     return {
         "overview": {
-            "total_users": user_stats["total_users"],
-            "active_subscribers": user_stats["active_subscribers"],
-            "unlimited_users": user_stats["unlimited_users"],
-            "blocked_users": user_stats["blocked_users"],
-            "new_users_today": user_stats["new_today"],
-            "new_users_week": user_stats["new_week"],
-            "new_users_month": user_stats["new_month"],
-            "total_requests": request_stats["total_requests"],
-            "requests_today": request_stats["requests_today"],
-            "requests_week": request_stats["requests_week"],
-            "requests_month": request_stats["requests_month"],
-            "total_broadcasts": broadcast_stats.get("total_broadcasts", 0),
-            "completed_broadcasts": broadcast_stats.get("completed_broadcasts", 0),
+            "total_users": user_stats.get("total", 0),
+            "active_subscribers": user_stats.get("subscribed", 0),
+            "unlimited_users": user_stats.get("unlimited", 0),
+            "blocked_users": user_stats.get("blocked", 0),
+            "new_users_today": user_stats.get("new_today", 0),
+            "new_users_week": user_stats.get("new_week", 0),
+            "new_users_month": user_stats.get("new_month", 0),
+            "total_requests": request_stats.get("total", 0),
+            "requests_today": request_stats.get("requests_today", 0),
+            "requests_week": request_stats.get("requests_week", 0),
+            "requests_month": request_stats.get("requests_month", 0),
+            "total_broadcasts": broadcast_stats.get("total", 0),
+            "completed_broadcasts": broadcast_stats.get("completed", 0),
             "conversion_rate": conversion_rate,
             "avg_requests_per_user": avg_requests_per_user,
             "broadcast_success_rate": broadcast_success_rate

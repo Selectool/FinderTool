@@ -22,6 +22,21 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
+def format_datetime(dt, default='Неизвестно'):
+    """Универсальная функция для форматирования datetime объектов"""
+    if not dt or dt == default:
+        return default
+
+    if hasattr(dt, 'strftime'):
+        return dt.strftime('%Y-%m-%d %H:%M')
+    elif isinstance(dt, str):
+        if len(dt) > 16:
+            return dt[:16]
+        return dt
+    else:
+        return str(dt)[:16] if dt else default
+
+
 class BroadcastStates(StatesGroup):
     selecting_audience = State()
     waiting_for_message = State()
@@ -194,7 +209,7 @@ async def callback_broadcasts_list(callback: CallbackQuery, db: UniversalDatabas
 
             text += f"{status_emoji} <b>{title}</b>\n"
             text += f"   ID: {broadcast['id']} | Отправлено: {sent}/{total}\n"
-            text += f"   Создана: {broadcast.get('created_at', 'Неизвестно')[:16]}\n\n"
+            text += f"   Создана: {format_datetime(broadcast.get('created_at'))}\n\n"
 
         # Создаем клавиатуру с пагинацией
         keyboard = InlineKeyboardBuilder()
@@ -609,6 +624,30 @@ async def callback_confirm_send_now(callback: CallbackQuery, state: FSMContext, 
         await state.clear()
 
 
+@router.callback_query(F.data == "cancel_broadcast", StateFilter("confirming_broadcast"))
+async def callback_cancel_broadcast(callback: CallbackQuery, state: FSMContext, db: UniversalDatabase):
+    """Отмена рассылки"""
+    if not await is_admin(callback.from_user.id, db):
+        await callback.answer("❌ Нет прав доступа")
+        await state.clear()
+        return
+
+    await state.clear()
+
+    await callback.message.edit_text(
+        "❌ <b>Рассылка отменена</b>\n\n"
+        "Вы можете создать новую рассылку в любое время.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="➕ Создать новую", callback_data="broadcast_create"),
+            InlineKeyboardButton(text="🔙 В админ-панель", callback_data="admin_broadcast")
+        ]])
+    )
+
+    await callback.answer("Рассылка отменена")
+    logger.info(f"Админ {callback.from_user.id} отменил рассылку")
+
+
 async def send_media_broadcast_task(db: UniversalDatabase, broadcast_id: int, bot, media_info: dict):
     """Фоновая задача отправки медиарассылки через Telegram Bot API"""
     logger.info(f"Начинаем отправку медиарассылки {broadcast_id}")
@@ -834,10 +873,8 @@ async def callback_broadcast_detail(callback: CallbackQuery, db: UniversalDataba
         total = stats.get('total_recipients', 0)
 
         # Даты
-        created_at = broadcast.get('created_at', 'Неизвестно')[:16]
-        started_at = broadcast.get('started_at', 'Не начата')
-        if started_at != 'Не начата':
-            started_at = started_at[:16]
+        created_at = format_datetime(broadcast.get('created_at'))
+        started_at = format_datetime(broadcast.get('started_at'), 'Не начата')
 
         # Аудитория
         target_names = {

@@ -1,0 +1,564 @@
+{% extends "base.html" %} {% block title %}Логи аудита{% endblock %} {% block
+content %}
+<div class="container-fluid">
+	<div class="row">
+		<div class="col-12">
+			<div class="d-flex justify-content-between align-items-center mb-4">
+				<h2><i class="fas fa-clipboard-list me-2"></i>Логи аудита</h2>
+				<div class="btn-group">
+					<button class="btn btn-outline-primary" onclick="exportLogs()">
+						<i class="fas fa-download me-1"></i>Экспорт
+					</button>
+					<button
+						class="btn btn-outline-warning"
+						onclick="showCleanupModal()"
+						id="cleanupBtn"
+					>
+						<i class="fas fa-broom me-1"></i>Очистка
+					</button>
+				</div>
+			</div>
+
+			<!-- Фильтры -->
+			<div class="card filters-card mb-4">
+				<div class="card-body">
+					<h6 class="card-title mb-3">
+						<i class="fas fa-filter me-2"></i>Фильтры
+					</h6>
+					<div class="row">
+						<div class="col-md-3">
+							<label for="adminFilter" class="form-label">Администратор</label>
+							<select class="form-select" id="adminFilter">
+								<option value="">Все администраторы</option>
+							</select>
+						</div>
+						<div class="col-md-3">
+							<label for="resourceFilter" class="form-label">Ресурс</label>
+							<select class="form-select" id="resourceFilter">
+								<option value="">Все ресурсы</option>
+							</select>
+						</div>
+						<div class="col-md-3">
+							<label for="actionFilter" class="form-label">Действие</label>
+							<select class="form-select" id="actionFilter">
+								<option value="">Все действия</option>
+							</select>
+						</div>
+						<div class="col-md-3">
+							<label for="daysFilter" class="form-label">Период</label>
+							<select class="form-select" id="daysFilter">
+								<option value="1">За день</option>
+								<option value="7">За неделю</option>
+								<option value="30" selected>За месяц</option>
+								<option value="90">За 3 месяца</option>
+								<option value="365">За год</option>
+							</select>
+						</div>
+					</div>
+					<div class="row mt-3">
+						<div class="col-12">
+							<button class="btn btn-primary" onclick="applyFilters()">
+								<i class="fas fa-search me-1"></i>Применить фильтры
+							</button>
+							<button
+								class="btn btn-outline-secondary ms-2"
+								onclick="resetFilters()"
+							>
+								<i class="fas fa-times me-1"></i>Сбросить
+							</button>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Статистика -->
+			<div class="row mb-4">
+				<div class="col-md-4">
+					<div class="card stats-card bg-primary text-white">
+						<div class="card-body">
+							<div class="d-flex justify-content-between">
+								<div>
+									<h6 class="card-title">Всего действий</h6>
+									<h3 id="totalActions">-</h3>
+								</div>
+								<div class="align-self-center">
+									<i class="fas fa-clipboard-list fa-2x opacity-75"></i>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="col-md-4">
+					<div class="card stats-card bg-info text-white">
+						<div class="card-body">
+							<div class="d-flex justify-content-between">
+								<div>
+									<h6 class="card-title">Активных админов</h6>
+									<h3 id="activeAdmins">-</h3>
+								</div>
+								<div class="align-self-center">
+									<i class="fas fa-users fa-2x opacity-75"></i>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="col-md-4">
+					<div class="card stats-card bg-success text-white">
+						<div class="card-body">
+							<div class="d-flex justify-content-between">
+								<div>
+									<h6 class="card-title">Типов ресурсов</h6>
+									<h3 id="resourceTypes">-</h3>
+								</div>
+								<div class="align-self-center">
+									<i class="fas fa-layer-group fa-2x opacity-75"></i>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Таблица логов -->
+			<div class="card">
+				<div class="card-body">
+					<div class="table-responsive">
+						<table class="table table-hover">
+							<thead>
+								<tr>
+									<th>Время</th>
+									<th>Администратор</th>
+									<th>Действие</th>
+									<th>Ресурс</th>
+									<th>ID ресурса</th>
+									<th>IP адрес</th>
+									<th>Детали</th>
+								</tr>
+							</thead>
+							<tbody id="logsTableBody">
+								<tr>
+									<td colspan="7" class="text-center">
+										<div class="loading-spinner me-2"></div>
+										Загрузка логов...
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+
+					<!-- Пагинация -->
+					<nav aria-label="Навигация по страницам" class="mt-4">
+						<ul class="pagination justify-content-center" id="pagination"></ul>
+					</nav>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- Модальное окно для очистки логов -->
+<div class="modal fade" id="cleanupModal" tabindex="-1">
+	<div class="modal-dialog">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title">
+					<i class="fas fa-broom me-2"></i>Очистка старых логов
+				</h5>
+				<button
+					type="button"
+					class="btn-close"
+					data-bs-dismiss="modal"
+				></button>
+			</div>
+			<div class="modal-body">
+				<div class="alert alert-warning">
+					<i class="fas fa-exclamation-triangle me-2"></i>
+					<strong>Внимание!</strong> Это действие необратимо. Старые логи будут
+					удалены навсегда.
+				</div>
+				<div class="mb-3">
+					<label for="retentionDays" class="form-label"
+						>Сохранить логи за последние дней:</label
+					>
+					<select class="form-select" id="retentionDays">
+						<option value="30">30 дней</option>
+						<option value="60">60 дней</option>
+						<option value="90" selected>90 дней</option>
+						<option value="180">180 дней</option>
+						<option value="365">365 дней</option>
+					</select>
+				</div>
+				<p class="text-muted">
+					Логи старше указанного периода будут удалены. Эта операция доступна
+					только разработчикам.
+				</p>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+					Отмена
+				</button>
+				<button type="button" class="btn btn-danger" onclick="confirmCleanup()">
+					<i class="fas fa-broom me-1"></i>Очистить логи
+				</button>
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- Модальное окно для деталей лога -->
+<div class="modal fade" id="logDetailsModal" tabindex="-1">
+	<div class="modal-dialog modal-lg">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title">
+					<i class="fas fa-info-circle me-2"></i>Детали действия
+				</h5>
+				<button
+					type="button"
+					class="btn-close"
+					data-bs-dismiss="modal"
+				></button>
+			</div>
+			<div class="modal-body">
+				<div id="logDetailsContent">
+					<!-- Содержимое будет загружено динамически -->
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+					Закрыть
+				</button>
+			</div>
+		</div>
+	</div>
+</div>
+{% endblock %} {% block scripts %}
+<script>
+	let currentPage = 1
+	let currentFilters = {}
+	let availableActions = []
+	let availableResources = []
+
+	// Загрузка данных при загрузке страницы
+	document.addEventListener('DOMContentLoaded', function () {
+		loadFiltersData()
+		loadLogs()
+		loadStats()
+	})
+
+	// Загрузка данных для фильтров
+	async function loadFiltersData() {
+		try {
+			const [actionsResponse, resourcesResponse] = await Promise.all([
+				fetch('/api/audit/actions'),
+				fetch('/api/audit/resources'),
+			])
+
+			if (actionsResponse.ok && resourcesResponse.ok) {
+				const actionsData = await actionsResponse.json()
+				const resourcesData = await resourcesResponse.json()
+
+				availableActions = actionsData.actions
+				availableResources = resourcesData.resources
+
+				populateFilterSelects()
+			}
+		} catch (error) {
+			console.error('Ошибка загрузки данных фильтров:', error)
+		}
+	}
+
+	// Заполнение селектов фильтров
+	function populateFilterSelects() {
+		const actionFilter = document.getElementById('actionFilter')
+		const resourceFilter = document.getElementById('resourceFilter')
+
+		// Заполняем действия
+		availableActions.forEach(action => {
+			const option = document.createElement('option')
+			option.value = action.value
+			option.textContent = action.name
+			actionFilter.appendChild(option)
+		})
+
+		// Заполняем ресурсы
+		availableResources.forEach(resource => {
+			const option = document.createElement('option')
+			option.value = resource.value
+			option.textContent = resource.name
+			resourceFilter.appendChild(option)
+		})
+	}
+
+	// Загрузка логов
+	async function loadLogs(page = 1) {
+		try {
+			const params = new URLSearchParams({
+				page: page,
+				per_page: 20,
+				...currentFilters,
+			})
+
+			const response = await fetch(`/api/audit/logs?${params}`)
+
+			if (!response.ok) {
+				throw new Error('Ошибка загрузки логов')
+			}
+
+			const data = await response.json()
+			displayLogs(data.logs)
+			displayPagination(data)
+
+			currentPage = page
+		} catch (error) {
+			console.error('Ошибка загрузки логов:', error)
+			showNotification('Ошибка загрузки логов', 'error')
+		}
+	}
+
+	// Отображение логов в таблице
+	function displayLogs(logs) {
+		const tbody = document.getElementById('logsTableBody')
+
+		if (logs.length === 0) {
+			tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="text-center text-muted">
+                    <i class="fas fa-inbox fa-2x mb-2"></i><br>
+                    Логи не найдены
+                </td>
+            </tr>
+        `
+			return
+		}
+
+		tbody.innerHTML = logs
+			.map(log => {
+				const date = new Date(log.created_at).toLocaleString('ru-RU')
+				const actionName =
+					availableActions.find(a => a.value === log.action)?.name || log.action
+				const resourceName =
+					availableResources.find(r => r.value === log.resource_type)?.name ||
+					log.resource_type
+
+				return `
+            <tr>
+                <td>
+                    <small class="text-muted">${date}</small>
+                </td>
+                <td>
+                    <div class="d-flex flex-column">
+                        <span class="fw-bold">${
+													log.admin_username || 'Неизвестно'
+												}</span>
+                        <small class="text-muted">${
+													log.admin_email || ''
+												}</small>
+                    </div>
+                </td>
+                <td>
+                    <span class="badge ${getActionBadgeClass(
+											log.action
+										)}">${actionName}</span>
+                </td>
+                <td>${resourceName}</td>
+                <td>${log.resource_id || '-'}</td>
+                <td>
+                    <small class="text-muted">${log.ip_address || '-'}</small>
+                </td>
+                <td>
+                    ${
+											log.details
+												? `<button class="btn btn-sm btn-outline-info" onclick="showLogDetails(${log.id})">
+                            <i class="fas fa-eye"></i>
+                        </button>`
+												: '-'
+										}
+                </td>
+            </tr>
+        `
+			})
+			.join('')
+	}
+
+	// Получение класса для бейджа действия
+	function getActionBadgeClass(action) {
+		const classes = {
+			CREATE: 'bg-success',
+			UPDATE: 'bg-warning text-dark',
+			DELETE: 'bg-danger',
+			VIEW: 'bg-info',
+			LOGIN: 'bg-primary',
+			LOGOUT: 'bg-secondary',
+			ROLE_CHANGE: 'bg-warning text-dark',
+			SEND: 'bg-info',
+			BLOCK: 'bg-danger',
+			UNBLOCK: 'bg-success',
+		}
+		return classes[action] || 'bg-secondary'
+	}
+
+	// Применение фильтров
+	function applyFilters() {
+		currentFilters = {
+			admin_user_id: document.getElementById('adminFilter').value || undefined,
+			resource_type:
+				document.getElementById('resourceFilter').value || undefined,
+			action: document.getElementById('actionFilter').value || undefined,
+		}
+
+		// Удаляем undefined значения
+		Object.keys(currentFilters).forEach(key => {
+			if (currentFilters[key] === undefined) {
+				delete currentFilters[key]
+			}
+		})
+
+		loadLogs(1)
+	}
+
+	// Сброс фильтров
+	function resetFilters() {
+		document.getElementById('adminFilter').value = ''
+		document.getElementById('resourceFilter').value = ''
+		document.getElementById('actionFilter').value = ''
+		document.getElementById('daysFilter').value = '30'
+
+		currentFilters = {}
+		loadLogs(1)
+	}
+
+	// Загрузка статистики
+	async function loadStats() {
+		try {
+			const days = document.getElementById('daysFilter').value
+			const [adminData, resourceData] = await Promise.all([
+				makeRequest(`/api/audit/admin-activity?days=${days}`),
+				makeRequest(`/api/audit/resource-activity?days=${days}`),
+			])
+
+			// Обновляем статистику
+			document.getElementById('totalActions').textContent = resourceData.reduce(
+				(sum, item) => sum + item.count,
+				0
+			)
+			document.getElementById('activeAdmins').textContent = adminData.length
+			document.getElementById('resourceTypes').textContent = new Set(
+				resourceData.map(item => item.resource_type)
+			).size
+		} catch (error) {
+			console.error('Ошибка загрузки статистики:', error)
+		}
+	}
+
+	// Отображение пагинации
+	function displayPagination(data) {
+		const pagination = document.getElementById('pagination')
+
+		if (data.total_pages <= 1) {
+			pagination.innerHTML = ''
+			return
+		}
+
+		let paginationHTML = ''
+
+		// Предыдущая страница
+		if (data.page > 1) {
+			paginationHTML += `
+            <li class="page-item">
+                <a class="page-link" href="#" onclick="loadLogs(${
+									data.page - 1
+								})">
+                    <i class="fas fa-chevron-left"></i>
+                </a>
+            </li>
+        `
+		}
+
+		// Страницы
+		const startPage = Math.max(1, data.page - 2)
+		const endPage = Math.min(data.total_pages, data.page + 2)
+
+		for (let i = startPage; i <= endPage; i++) {
+			paginationHTML += `
+            <li class="page-item ${i === data.page ? 'active' : ''}">
+                <a class="page-link" href="#" onclick="loadLogs(${i})">${i}</a>
+            </li>
+        `
+		}
+
+		// Следующая страница
+		if (data.page < data.total_pages) {
+			paginationHTML += `
+            <li class="page-item">
+                <a class="page-link" href="#" onclick="loadLogs(${
+									data.page + 1
+								})">
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+            </li>
+        `
+		}
+
+		pagination.innerHTML = paginationHTML
+	}
+
+	// Показать модальное окно очистки
+	function showCleanupModal() {
+		const modal = new bootstrap.Modal(document.getElementById('cleanupModal'))
+		modal.show()
+	}
+
+	// Подтверждение очистки логов
+	async function confirmCleanup() {
+		const days = document.getElementById('retentionDays').value
+
+		try {
+			const response = await fetch(`/api/audit/cleanup?days=${days}`, {
+				method: 'POST',
+			})
+
+			const result = await response.json()
+
+			if (response.ok) {
+				showNotification(
+					`Удалено ${result.deleted_count} старых записей`,
+					'success'
+				)
+
+				// Закрываем модальное окно
+				const modal = bootstrap.Modal.getInstance(
+					document.getElementById('cleanupModal')
+				)
+				modal.hide()
+
+				// Перезагружаем логи
+				loadLogs(currentPage)
+				loadStats()
+			} else {
+				showNotification('Ошибка: ' + result.detail, 'error')
+			}
+		} catch (error) {
+			console.error('Ошибка очистки логов:', error)
+			showNotification('Ошибка при очистке логов', 'error')
+		}
+	}
+
+	// Экспорт логов
+	function exportLogs() {
+		showNotification(
+			'Функция экспорта будет реализована в следующей версии',
+			'info'
+		)
+	}
+
+	// Показать детали лога
+	function showLogDetails(logId) {
+		showNotification(
+			'Функция просмотра деталей будет реализована в следующей версии',
+			'info'
+		)
+	}
+</script>
+{% endblock %}

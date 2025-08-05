@@ -22,6 +22,13 @@ class UniversalDatabase:
         if not self.database_url:
             raise ValueError("DATABASE_URL обязательна! Укажите PostgreSQL URL в переменных окружения.")
         self.adapter = DatabaseAdapter(self.database_url)
+        self._connection_pool = None
+
+    async def get_connection(self):
+        """Получить соединение с базой данных"""
+        if not self.adapter.connection or self.adapter.connection.is_closed():
+            await self.adapter.connect()
+        return self.adapter.connection
 
     def _extract_count(self, result) -> int:
         """Извлечь значение COUNT из результата PostgreSQL"""
@@ -192,16 +199,16 @@ class UniversalDatabase:
             
             if self.adapter.db_type == 'sqlite':
                 query = """
-                    UPDATE users 
+                    UPDATE users
                     SET requests_used = requests_used + 1, last_request = ?
                     WHERE user_id = ?
                 """
                 params = (datetime.now(), user_id)
             else:  # PostgreSQL
-                # В PostgreSQL колонка называется last_activity
+                # Используем last_request для совместимости с админ-панелью
                 query = """
                     UPDATE users
-                    SET requests_used = requests_used + 1, last_activity = $1
+                    SET requests_used = requests_used + 1, last_request = $1
                     WHERE user_id = $2
                 """
                 params = (datetime.now(), user_id)
@@ -282,45 +289,63 @@ class UniversalDatabase:
         """Получить статистику"""
         try:
             await self.adapter.connect()
-            
+
             stats = {}
-            
+
             # Общее количество пользователей
             total_users_result = await self.adapter.fetch_one("SELECT COUNT(*) FROM users")
             stats['total_users'] = self._extract_count(total_users_result)
-            
+
             # Активные подписчики
             if self.adapter.db_type == 'sqlite':
                 active_subs_query = """
-                    SELECT COUNT(*) FROM users 
-                    WHERE is_subscribed = 1 
+                    SELECT COUNT(*) FROM users
+                    WHERE is_subscribed = 1
                     AND (subscription_end IS NULL OR subscription_end > datetime('now'))
                 """
             else:  # PostgreSQL
                 active_subs_query = """
-                    SELECT COUNT(*) FROM users 
-                    WHERE is_subscribed = TRUE 
+                    SELECT COUNT(*) FROM users
+                    WHERE is_subscribed = TRUE
                     AND (subscription_end IS NULL OR subscription_end > NOW())
                 """
-            
+
             active_subs_result = await self.adapter.fetch_one(active_subs_query)
             stats['active_subscribers'] = self._extract_count(active_subs_result)
-            
+
+            # Безлимитные пользователи
+            if self.adapter.db_type == 'sqlite':
+                unlimited_query = "SELECT COUNT(*) FROM users WHERE unlimited_access = 1"
+            else:  # PostgreSQL
+                unlimited_query = "SELECT COUNT(*) FROM users WHERE unlimited_access = TRUE"
+
+            unlimited_result = await self.adapter.fetch_one(unlimited_query)
+            stats['unlimited_users'] = self._extract_count(unlimited_result)
+
+            # Заблокированные пользователи
+            if self.adapter.db_type == 'sqlite':
+                blocked_query = "SELECT COUNT(*) FROM users WHERE blocked = 1 OR bot_blocked = 1"
+            else:  # PostgreSQL
+                blocked_query = "SELECT COUNT(*) FROM users WHERE blocked = TRUE OR bot_blocked = TRUE"
+
+            blocked_result = await self.adapter.fetch_one(blocked_query)
+            stats['blocked_users'] = self._extract_count(blocked_result)
+
             # Запросы за сегодня
             if self.adapter.db_type == 'sqlite':
                 requests_today_query = """
-                    SELECT COUNT(*) FROM requests 
+                    SELECT COUNT(*) FROM requests
                     WHERE created_at >= date('now')
                 """
             else:  # PostgreSQL
                 requests_today_query = """
-                    SELECT COUNT(*) FROM requests 
+                    SELECT COUNT(*) FROM requests
                     WHERE created_at >= CURRENT_DATE
                 """
-            
+
             requests_today_result = await self.adapter.fetch_one(requests_today_query)
             stats['requests_today'] = self._extract_count(requests_today_result)
-            
+
             await self.adapter.disconnect()
             return stats
             
@@ -429,10 +454,10 @@ class UniversalDatabase:
                     WHERE last_request > datetime('now', '-30 days')
                 """
             else:  # PostgreSQL
-                # В PostgreSQL колонка называется last_activity
+                # Используем last_request для совместимости с админ-панелью
                 query = """
                     SELECT COUNT(*) FROM users
-                    WHERE last_activity > NOW() - INTERVAL '30 days'
+                    WHERE last_request > NOW() - INTERVAL '30 days'
                 """
 
             result = await self.adapter.fetch_one(query)
@@ -494,10 +519,10 @@ class UniversalDatabase:
                     WHERE last_request > datetime('now', '-{days} days')
                 """
             else:  # PostgreSQL
-                # В PostgreSQL колонка называется last_activity
+                # Используем last_request для совместимости с админ-панелью
                 query = f"""
                     SELECT user_id FROM users
-                    WHERE last_activity > NOW() - INTERVAL '{days} days'
+                    WHERE last_request > NOW() - INTERVAL '{days} days'
                 """
 
             results = await self.adapter.fetch_all(query)
@@ -583,14 +608,14 @@ class UniversalDatabase:
             if self.adapter.db_type == 'sqlite':
                 query = """
                     INSERT INTO broadcasts
-                    (title, message, target_users, scheduled_time, created_by, created_at, status)
+                    (title, message_text, target_users, scheduled_time, created_by, created_at, status)
                     VALUES (?, ?, ?, ?, ?, ?, 'pending')
                 """
                 params = (title, message_text, target_users, scheduled_time, created_by, datetime.now())
             else:  # PostgreSQL
                 query = """
                     INSERT INTO broadcasts
-                    (title, message, target_users, scheduled_time, created_by, created_at, status)
+                    (title, message_text, target_users, scheduled_time, created_by, created_at, status)
                     VALUES ($1, $2, $3, $4, $5, $6, 'pending')
                     RETURNING id
                 """
@@ -639,7 +664,7 @@ class UniversalDatabase:
             else:  # PostgreSQL
                 query = """
                     UPDATE users
-                    SET last_activity = $1
+                    SET last_request = $1
                     WHERE user_id = $2
                 """
                 params = (datetime.now(), user_id)
@@ -1689,16 +1714,69 @@ class UniversalDatabase:
                 pass
 
     async def get_broadcast_detailed_stats(self, broadcast_id: int) -> dict:
-        """Получить детальную статистику рассылки"""
+        """Получить детальную статистику рассылки с production-ready обработкой ошибок"""
         try:
-            await self.adapter.connect()
+            # Проверяем и переподключаемся при необходимости
+            if not self.adapter.connection or self.adapter.connection.is_closed():
+                await self.adapter.connect()
 
             # Основная информация о рассылке
             broadcast = await self.get_broadcast_by_id(broadcast_id)
             if not broadcast:
-                return {}
+                logger.warning(f"Рассылка {broadcast_id} не найдена")
+                return self._get_empty_stats()
 
-            # Статистика доставки
+            # Статистика доставки из логов
+            delivery_stats = await self._get_delivery_stats_from_logs(broadcast_id)
+
+            # Если нет логов доставки, берем из основной таблицы
+            if sum(delivery_stats.values()) == 0:
+                delivery_stats = self._get_delivery_stats_from_broadcast(broadcast)
+
+            # Подсчитываем общее количество получателей
+            # Используем фактическое количество из целевой аудитории, а не сумму статусов
+            target_type = broadcast.get('target_users', 'all')
+            total_recipients = await self.get_target_audience_count(target_type)
+
+            # Возвращаем структуру, совместимую с шаблоном
+            return {
+                'broadcast': broadcast,
+                'delivery_stats': delivery_stats,
+                'total_recipients': total_recipients,
+                'sent': delivery_stats.get('sent', 0),
+                'delivered': delivery_stats.get('delivered', 0),
+                'failed': delivery_stats.get('failed', 0),
+                'blocked': delivery_stats.get('blocked', 0),
+                'skipped': delivery_stats.get('skipped', 0),
+                'current_rate': 0,  # Для совместимости с шаблоном
+                'estimated_time': ""  # Для совместимости с шаблоном
+            }
+
+        except Exception as e:
+            logger.error(f"Ошибка получения детальной статистики рассылки: {e}")
+            return self._get_empty_stats()
+        finally:
+            # Не закрываем соединение, оставляем для переиспользования
+            pass
+
+    def _get_empty_stats(self) -> dict:
+        """Возвращает пустую статистику для обработки ошибок"""
+        return {
+            'broadcast': None,
+            'delivery_stats': {'sent': 0, 'delivered': 0, 'failed': 0, 'blocked': 0, 'skipped': 0},
+            'total_recipients': 0,
+            'sent': 0,
+            'delivered': 0,
+            'failed': 0,
+            'blocked': 0,
+            'skipped': 0,
+            'current_rate': 0,
+            'estimated_time': ""
+        }
+
+    async def _get_delivery_stats_from_logs(self, broadcast_id: int) -> dict:
+        """Получить статистику доставки из логов"""
+        try:
             if self.adapter.db_type == 'sqlite':
                 stats_query = """
                     SELECT status, COUNT(*) as count
@@ -1722,7 +1800,8 @@ class UniversalDatabase:
                 'sent': 0,
                 'delivered': 0,
                 'failed': 0,
-                'blocked': 0
+                'blocked': 0,
+                'skipped': 0
             }
 
             if stats_results:
@@ -1732,37 +1811,29 @@ class UniversalDatabase:
                     if status in delivery_stats:
                         delivery_stats[status] = count
 
-            # Подсчитываем общее количество получателей
-            total_recipients = sum(delivery_stats.values())
+            return delivery_stats
 
-            # Если нет логов доставки, берем из основной таблицы
-            if total_recipients == 0:
-                sent_count = broadcast.get('sent_count', 0) or 0
-                failed_count = broadcast.get('failed_count', 0) or 0
-                total_recipients = sent_count + failed_count
+        except Exception as e:
+            logger.error(f"Ошибка получения статистики из логов: {e}")
+            return {'sent': 0, 'delivered': 0, 'failed': 0, 'blocked': 0, 'skipped': 0}
 
-                # Обновляем статистику доставки из основной таблицы
-                delivery_stats['sent'] = sent_count
-                delivery_stats['failed'] = failed_count
+    def _get_delivery_stats_from_broadcast(self, broadcast: dict) -> dict:
+        """Получить статистику доставки из основной таблицы рассылок"""
+        try:
+            sent_count = broadcast.get('sent_count', 0) or 0
+            failed_count = broadcast.get('failed_count', 0) or 0
 
             return {
-                'broadcast': broadcast,
-                'delivery_stats': delivery_stats,
-                'total_recipients': total_recipients,
-                'sent': delivery_stats.get('sent', 0),
-                'delivered': delivery_stats.get('delivered', 0),
-                'failed': delivery_stats.get('failed', 0),
-                'blocked': delivery_stats.get('blocked', 0)
+                'sent': sent_count,
+                'delivered': sent_count,  # Считаем отправленные как доставленные
+                'failed': failed_count,
+                'blocked': 0,
+                'skipped': 0
             }
 
         except Exception as e:
-            logger.error(f"Ошибка получения детальной статистики рассылки: {e}")
-            return {}
-        finally:
-            try:
-                await self.adapter.disconnect()
-            except:
-                pass
+            logger.error(f"Ошибка получения статистики из таблицы broadcasts: {e}")
+            return {'sent': 0, 'delivered': 0, 'failed': 0, 'blocked': 0, 'skipped': 0}
 
     async def get_broadcast_logs(self, broadcast_id: int, page: int = 1, per_page: int = 50, status: str = None) -> dict:
         """Получить логи рассылки"""
@@ -1830,10 +1901,37 @@ class UniversalDatabase:
             logger.error(f"Ошибка получения логов рассылки: {e}")
             return {'logs': [], 'total': 0, 'page': page, 'per_page': per_page, 'pages': 1}
         finally:
-            try:
-                await self.adapter.disconnect()
-            except:
-                pass
+            # Не закрываем соединение, оставляем для переиспользования
+            pass
+
+    async def log_broadcast_delivery(self, broadcast_id: int, user_id: int, status: str, message: str = "", error_details: str = ""):
+        """Логировать доставку сообщения рассылки"""
+        try:
+            # Проверяем и переподключаемся при необходимости
+            if not self.adapter.connection or self.adapter.connection.is_closed():
+                await self.adapter.connect()
+
+            if self.adapter.db_type == 'sqlite':
+                query = """
+                    INSERT INTO broadcast_logs (broadcast_id, user_id, status, message, error_details, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """
+                params = (broadcast_id, user_id, status, message, error_details, datetime.now())
+            else:  # PostgreSQL
+                query = """
+                    INSERT INTO broadcast_logs (broadcast_id, user_id, status, message, error_details, created_at)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                """
+                params = (broadcast_id, user_id, status, message, error_details, datetime.now())
+
+            await self.adapter.execute(query, params)
+            logger.debug(f"📝 Логирована доставка рассылки {broadcast_id} для пользователя {user_id}: {status}")
+
+        except Exception as e:
+            logger.error(f"Ошибка логирования доставки рассылки: {e}")
+        finally:
+            # Не закрываем соединение, оставляем для переиспользования
+            pass
 
     async def get_all_broadcast_logs(self, broadcast_id: int) -> List[dict]:
         """Получить все логи рассылки"""
@@ -1950,11 +2048,14 @@ class UniversalDatabase:
                 params.append(failed_count)
 
             if completed is not None:
-                updates.append("completed = ?")
-                params.append(completed)
                 if completed:
+                    updates.append("status = ?")
+                    params.append("completed")
                     updates.append("completed_at = ?")
                     params.append(datetime.now())
+                else:
+                    updates.append("status = ?")
+                    params.append("pending")
 
             if started_at is not None:
                 updates.append("started_at = ?")
@@ -2306,14 +2407,71 @@ class UniversalDatabase:
             users_active_result = await self.adapter.fetch_one(users_active_query, ())
             users_active = self._extract_count(users_active_result)
 
-            users_subscribed_query = "SELECT COUNT(*) FROM users WHERE is_subscribed = TRUE AND subscription_end > ?"
-            users_subscribed_result = await self.adapter.fetch_one(users_subscribed_query, (datetime.now(),))
+            # Исправляем запрос для подписчиков (учитываем NULL значения)
+            if self.adapter.db_type == 'sqlite':
+                users_subscribed_query = """
+                    SELECT COUNT(*) FROM users
+                    WHERE is_subscribed = TRUE
+                    AND (subscription_end IS NULL OR subscription_end > datetime('now'))
+                """
+                users_subscribed_result = await self.adapter.fetch_one(users_subscribed_query, ())
+            else:  # PostgreSQL
+                users_subscribed_query = """
+                    SELECT COUNT(*) FROM users
+                    WHERE is_subscribed = TRUE
+                    AND (subscription_end IS NULL OR subscription_end > NOW())
+                """
+                users_subscribed_result = await self.adapter.fetch_one(users_subscribed_query, ())
+
             users_subscribed = self._extract_count(users_subscribed_result)
+
+            # Добавляем статистику безлимитных пользователей
+            users_unlimited_query = "SELECT COUNT(*) FROM users WHERE unlimited_access = TRUE"
+            users_unlimited_result = await self.adapter.fetch_one(users_unlimited_query, ())
+            users_unlimited = self._extract_count(users_unlimited_result)
+
+            # Новые пользователи за периоды
+            if self.adapter.db_type == 'sqlite':
+                users_new_today_query = "SELECT COUNT(*) FROM users WHERE date(created_at) = date('now')"
+                users_new_week_query = "SELECT COUNT(*) FROM users WHERE created_at >= date('now', '-7 days')"
+                users_new_month_query = "SELECT COUNT(*) FROM users WHERE created_at >= date('now', '-30 days')"
+            else:  # PostgreSQL
+                users_new_today_query = "SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_DATE"
+                users_new_week_query = "SELECT COUNT(*) FROM users WHERE created_at >= NOW() - INTERVAL '7 days'"
+                users_new_month_query = "SELECT COUNT(*) FROM users WHERE created_at >= NOW() - INTERVAL '30 days'"
+
+            users_new_today_result = await self.adapter.fetch_one(users_new_today_query, ())
+            users_new_today = self._extract_count(users_new_today_result)
+
+            users_new_week_result = await self.adapter.fetch_one(users_new_week_query, ())
+            users_new_week = self._extract_count(users_new_week_result)
+
+            users_new_month_result = await self.adapter.fetch_one(users_new_month_query, ())
+            users_new_month = self._extract_count(users_new_month_result)
 
             # Статистика запросов
             requests_total_query = "SELECT COUNT(*) FROM requests"
             requests_total_result = await self.adapter.fetch_one(requests_total_query, ())
             requests_total = self._extract_count(requests_total_result)
+
+            # Запросы за периоды
+            if self.adapter.db_type == 'sqlite':
+                requests_today_query = "SELECT COUNT(*) FROM requests WHERE date(created_at) = date('now')"
+                requests_week_query = "SELECT COUNT(*) FROM requests WHERE created_at >= date('now', '-7 days')"
+                requests_month_query = "SELECT COUNT(*) FROM requests WHERE created_at >= date('now', '-30 days')"
+            else:  # PostgreSQL
+                requests_today_query = "SELECT COUNT(*) FROM requests WHERE created_at >= CURRENT_DATE"
+                requests_week_query = "SELECT COUNT(*) FROM requests WHERE created_at >= NOW() - INTERVAL '7 days'"
+                requests_month_query = "SELECT COUNT(*) FROM requests WHERE created_at >= NOW() - INTERVAL '30 days'"
+
+            requests_today_result = await self.adapter.fetch_one(requests_today_query, ())
+            requests_today = self._extract_count(requests_today_result)
+
+            requests_week_result = await self.adapter.fetch_one(requests_week_query, ())
+            requests_week = self._extract_count(requests_week_result)
+
+            requests_month_result = await self.adapter.fetch_one(requests_month_query, ())
+            requests_month = self._extract_count(requests_month_result)
 
             # Статистика платежей
             payments_total_query = "SELECT COUNT(*) FROM payments"
@@ -2334,10 +2492,17 @@ class UniversalDatabase:
                     'total': users_total,
                     'active': users_active,
                     'subscribed': users_subscribed,
-                    'blocked': users_total - users_active
+                    'unlimited': users_unlimited,
+                    'blocked': users_total - users_active,
+                    'new_today': users_new_today,
+                    'new_week': users_new_week,
+                    'new_month': users_new_month
                 },
                 'requests': {
-                    'total': requests_total
+                    'total': requests_total,
+                    'requests_today': requests_today,
+                    'requests_week': requests_week,
+                    'requests_month': requests_month
                 },
                 'payments': {
                     'total': payments_total,
@@ -2429,6 +2594,127 @@ class UniversalDatabase:
         except Exception as e:
             logger.error(f"Ошибка сброса счетчика запросов: {e}")
             return False
+        finally:
+            try:
+                await self.adapter.disconnect()
+            except:
+                pass
+
+    async def get_user_stats(self, user_id: int) -> dict:
+        """Получить статистику пользователя"""
+        connection_opened = False
+        try:
+            # Проверяем, есть ли уже соединение
+            if not self.adapter.connection or self.adapter.connection.is_closed():
+                await self.adapter.connect()
+                connection_opened = True
+
+            # Получаем базовую информацию о пользователе напрямую
+            if self.adapter.db_type == 'sqlite':
+                user_query = "SELECT * FROM users WHERE user_id = ?"
+                user_params = (user_id,)
+            else:  # PostgreSQL
+                user_query = "SELECT * FROM users WHERE user_id = $1"
+                user_params = (user_id,)
+
+            user_result = await self.adapter.fetch_one(user_query, user_params)
+            if not user_result:
+                return {}
+
+            user = dict(user_result)
+
+            # Общее количество запросов
+            if self.adapter.db_type == 'sqlite':
+                query = "SELECT COUNT(*) as total FROM requests WHERE user_id = ?"
+                params = (user_id,)
+            else:  # PostgreSQL
+                query = "SELECT COUNT(*) as total FROM requests WHERE user_id = $1"
+                params = (user_id,)
+
+            result = await self.adapter.fetch_one(query, params)
+            total_requests = self._extract_count(result) if result else 0
+
+            # Запросы за сегодня
+            if self.adapter.db_type == 'sqlite':
+                query = "SELECT COUNT(*) as today FROM requests WHERE user_id = ? AND DATE(created_at) = DATE('now')"
+                params = (user_id,)
+            else:  # PostgreSQL
+                query = "SELECT COUNT(*) as today FROM requests WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE"
+                params = (user_id,)
+
+            result = await self.adapter.fetch_one(query, params)
+            requests_today = self._extract_count(result) if result else 0
+
+            # Запросы за неделю
+            if self.adapter.db_type == 'sqlite':
+                query = "SELECT COUNT(*) as week FROM requests WHERE user_id = ? AND created_at >= DATE('now', '-7 days')"
+                params = (user_id,)
+            else:  # PostgreSQL
+                query = "SELECT COUNT(*) as week FROM requests WHERE user_id = $1 AND created_at >= CURRENT_DATE - INTERVAL '7 days'"
+                params = (user_id,)
+
+            result = await self.adapter.fetch_one(query, params)
+            requests_week = self._extract_count(result) if result else 0
+
+            # Запросы за месяц
+            if self.adapter.db_type == 'sqlite':
+                query = "SELECT COUNT(*) as month FROM requests WHERE user_id = ? AND created_at >= DATE('now', '-30 days')"
+                params = (user_id,)
+            else:  # PostgreSQL
+                query = "SELECT COUNT(*) as month FROM requests WHERE user_id = $1 AND created_at >= CURRENT_DATE - INTERVAL '30 days'"
+                params = (user_id,)
+
+            result = await self.adapter.fetch_one(query, params)
+            requests_month = self._extract_count(result) if result else 0
+
+            return {
+                'total_requests': total_requests,
+                'requests_today': requests_today,
+                'requests_week': requests_week,
+                'requests_month': requests_month,
+                'is_subscribed': user.get('is_subscribed', False),
+                'unlimited_access': user.get('unlimited_access', False)
+            }
+
+        except Exception as e:
+            logger.error(f"Ошибка получения статистики пользователя {user_id}: {e}")
+            return {}
+        finally:
+            # Закрываем соединение только если мы его открыли
+            if connection_opened:
+                try:
+                    await self.adapter.disconnect()
+                except:
+                    pass
+
+    async def get_user_requests(self, user_id: int, limit: int = 10) -> List[dict]:
+        """Получить историю запросов пользователя"""
+        try:
+            await self.adapter.connect()
+
+            if self.adapter.db_type == 'sqlite':
+                query = """
+                    SELECT * FROM requests
+                    WHERE user_id = ?
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                """
+                params = (user_id, limit)
+            else:  # PostgreSQL
+                query = """
+                    SELECT * FROM requests
+                    WHERE user_id = $1
+                    ORDER BY created_at DESC
+                    LIMIT $2
+                """
+                params = (user_id, limit)
+
+            results = await self.adapter.fetch_all(query, params)
+            return [dict(row) for row in results] if results else []
+
+        except Exception as e:
+            logger.error(f"Ошибка получения истории запросов пользователя {user_id}: {e}")
+            return []
         finally:
             try:
                 await self.adapter.disconnect()

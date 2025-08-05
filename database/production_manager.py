@@ -227,47 +227,122 @@ class ProductionDatabaseManager:
 
     async def _create_indexes(self):
         """Создать индексы для оптимизации производительности"""
-        indexes = [
-            # Пользователи
-            "CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at)",
-            "CREATE INDEX IF NOT EXISTS idx_users_subscription ON users(is_subscribed, subscription_end)",
-            "CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)",
-            "CREATE INDEX IF NOT EXISTS idx_users_blocked ON users(blocked, bot_blocked)",
-
-            # Запросы
-            "CREATE INDEX IF NOT EXISTS idx_requests_user_created ON requests(user_id, created_at)",
-            "CREATE INDEX IF NOT EXISTS idx_requests_created_at ON requests(created_at)",
-
-            # Платежи
-            "CREATE INDEX IF NOT EXISTS idx_payments_user_status ON payments(user_id, status)",
-            "CREATE INDEX IF NOT EXISTS idx_payments_status_created ON payments(status, created_at)",
-            "CREATE INDEX IF NOT EXISTS idx_payments_provider ON payments(provider, status)",
-
-            # Рассылки
-            "CREATE INDEX IF NOT EXISTS idx_broadcasts_status_created ON broadcasts(status, created_at)",
-            "CREATE INDEX IF NOT EXISTS idx_broadcasts_created_by ON broadcasts(created_by, created_at)",
-
-            # Админ пользователи
-            "CREATE INDEX IF NOT EXISTS idx_admin_users_role ON admin_users(role, is_active)",
-            "CREATE INDEX IF NOT EXISTS idx_admin_users_last_login ON admin_users(last_login)",
-        ]
+        # Проверяем существование столбцов перед созданием индексов
+        safe_indexes = []
 
         try:
             await self.adapter.connect()
 
-            for index_sql in indexes:
+            # Получаем информацию о столбцах таблиц
+            table_columns = await self._get_table_columns()
+
+            # Базовые индексы (всегда безопасные)
+            base_indexes = [
+                # Пользователи - базовые столбцы
+                ("users", "created_at", "CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at)"),
+                ("users", "role", "CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)"),
+
+                # Запросы
+                ("requests", "user_id,created_at", "CREATE INDEX IF NOT EXISTS idx_requests_user_created ON requests(user_id, created_at)"),
+                ("requests", "created_at", "CREATE INDEX IF NOT EXISTS idx_requests_created_at ON requests(created_at)"),
+
+                # Платежи - базовые столбцы
+                ("payments", "user_id,status", "CREATE INDEX IF NOT EXISTS idx_payments_user_status ON payments(user_id, status)"),
+                ("payments", "status,created_at", "CREATE INDEX IF NOT EXISTS idx_payments_status_created ON payments(status, created_at)"),
+            ]
+
+            # Условные индексы (только если столбцы существуют)
+            conditional_indexes = [
+                # Пользователи - условные столбцы
+                ("users", ["is_subscribed", "subscription_end"], "CREATE INDEX IF NOT EXISTS idx_users_subscription ON users(is_subscribed, subscription_end)"),
+                ("users", ["blocked", "bot_blocked"], "CREATE INDEX IF NOT EXISTS idx_users_blocked ON users(blocked, bot_blocked)"),
+
+                # Платежи - условные столбцы
+                ("payments", ["provider"], "CREATE INDEX IF NOT EXISTS idx_payments_provider ON payments(provider, status)"),
+
+                # Рассылки - условные столбцы
+                ("broadcasts", ["status", "created_at"], "CREATE INDEX IF NOT EXISTS idx_broadcasts_status_created ON broadcasts(status, created_at)"),
+                ("broadcasts", ["created_by", "created_at"], "CREATE INDEX IF NOT EXISTS idx_broadcasts_created_by ON broadcasts(created_by, created_at)"),
+
+                # Админ пользователи - условные столбцы
+                ("admin_users", ["role", "is_active"], "CREATE INDEX IF NOT EXISTS idx_admin_users_role ON admin_users(role, is_active)"),
+                ("admin_users", ["last_login"], "CREATE INDEX IF NOT EXISTS idx_admin_users_last_login ON admin_users(last_login)"),
+            ]
+
+            # Добавляем базовые индексы
+            for table, columns, index_sql in base_indexes:
+                if table in table_columns:
+                    safe_indexes.append(index_sql)
+
+            # Добавляем условные индексы только если все столбцы существуют
+            for table, required_columns, index_sql in conditional_indexes:
+                if table in table_columns:
+                    if all(col in table_columns[table] for col in required_columns):
+                        safe_indexes.append(index_sql)
+                    else:
+                        missing_cols = [col for col in required_columns if col not in table_columns[table]]
+                        logger.info(f"Пропускаем индекс для {table}: отсутствуют столбцы {missing_cols}")
+
+            # Создаем только безопасные индексы
+            for index_sql in safe_indexes:
                 try:
                     await self.adapter.execute(index_sql)
-                    logger.debug(f"Создан индекс: {index_sql.split('ON')[1].split('(')[0].strip()}")
+                    table_name = index_sql.split('ON')[1].split('(')[0].strip()
+                    logger.debug(f"Создан индекс для {table_name}")
                 except Exception as e:
                     logger.warning(f"Ошибка создания индекса: {e}")
 
-            logger.info("Индексы базы данных созданы/обновлены")
+            logger.info(f"Индексы базы данных созданы/обновлены ({len(safe_indexes)} индексов)")
 
         except Exception as e:
             logger.error(f"Ошибка создания индексов: {e}")
         finally:
             await self.adapter.disconnect()
+
+    async def _get_table_columns(self) -> dict:
+        """Получить информацию о столбцах всех таблиц"""
+        table_columns = {}
+
+        try:
+            if self.adapter.db_type == 'postgresql':
+                # Получаем столбцы всех таблиц
+                result = await self.adapter.fetch_all("""
+                    SELECT table_name, column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                    ORDER BY table_name, ordinal_position
+                """)
+
+                if result:
+                    # Обрабатываем результат в зависимости от типа
+                    if isinstance(result, list):
+                        for row in result:
+                            if isinstance(row, (list, tuple)):
+                                table_name = row[0]
+                                column_name = row[1]
+                            elif hasattr(row, '__getitem__'):  # Record объект
+                                table_name = row['table_name']
+                                column_name = row['column_name']
+                            else:
+                                continue
+
+                            if table_name not in table_columns:
+                                table_columns[table_name] = []
+                            table_columns[table_name].append(column_name)
+                    else:
+                        # Если result не список, пробуем обработать как одну запись
+                        if hasattr(result, '__getitem__'):
+                            table_name = result['table_name']
+                            column_name = result['column_name']
+                            if table_name not in table_columns:
+                                table_columns[table_name] = []
+                            table_columns[table_name].append(column_name)
+
+            return table_columns
+
+        except Exception as e:
+            logger.warning(f"Ошибка получения информации о столбцах: {e}")
+            return {}
 
     async def get_database_info(self) -> Dict[str, Any]:
         """Получить информацию о базе данных"""

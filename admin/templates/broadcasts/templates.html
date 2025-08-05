@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+
+{% block title %}Шаблоны сообщений{% endblock %}
+
+{% block extra_head %}
+<style>
+.template-card {
+    transition: all 0.2s;
+    cursor: pointer;
+}
+
+.template-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.template-preview {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 0.9rem;
+    max-height: 100px;
+    overflow: hidden;
+    position: relative;
+}
+
+.template-preview::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 20px;
+    background: linear-gradient(transparent, #f8f9fa);
+}
+
+.category-badge {
+    font-size: 0.75rem;
+    padding: 4px 8px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>📝 Шаблоны сообщений</h1>
+    <div>
+        <a href="/broadcasts/" class="btn btn-outline-secondary me-2">
+            ← К рассылкам
+        </a>
+        <a href="/broadcasts/templates/create" class="btn btn-primary">
+            ➕ Создать шаблон
+        </a>
+    </div>
+</div>
+
+<!-- Фильтры -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Категория</label>
+                <select class="form-select" id="categoryFilter">
+                    <option value="">Все категории</option>
+                    <option value="general">Общие</option>
+                    <option value="promotion">Акции</option>
+                    <option value="notification">Уведомления</option>
+                    <option value="welcome">Приветствие</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Поиск</label>
+                <input type="text" class="form-control" id="searchFilter" placeholder="Поиск по названию или содержимому...">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">&nbsp;</label>
+                <button class="btn btn-outline-secondary w-100" onclick="clearFilters()">
+                    🗑️ Очистить
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Шаблоны -->
+{% if templates %}
+<div class="row" id="templatesGrid">
+    {% for template in templates %}
+    <div class="col-lg-4 col-md-6 mb-4 template-item" data-category="{{ template.category }}" data-name="{{ template.name|lower }}" data-content="{{ template.content|lower }}">
+        <div class="card template-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h5 class="card-title mb-0">{{ template.name }}</h5>
+                    <span class="badge bg-secondary category-badge">{{ template.category }}</span>
+                </div>
+                
+                <div class="template-preview mb-3">
+                    {{ template.content|safe }}
+                </div>
+                
+                <div class="d-flex justify-content-between align-items-center">
+                    <small class="text-muted">
+                        Создан: {{ template.created_at.strftime('%d.%m.%Y') if template.created_at else '-' }}
+                    </small>
+                    
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-primary" onclick="useTemplate({{ template.id }})" title="Использовать">
+                            📋
+                        </button>
+                        <button class="btn btn-outline-secondary" onclick="editTemplate({{ template.id }})" title="Редактировать">
+                            ✏️
+                        </button>
+                        <button class="btn btn-outline-danger" onclick="deleteTemplate({{ template.id }})" title="Удалить">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Пагинация -->
+{% if pagination and pagination.pages > 1 %}
+<nav aria-label="Пагинация шаблонов">
+    <ul class="pagination justify-content-center">
+        {% if pagination.has_prev %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ pagination.prev_num }}">Предыдущая</a>
+        </li>
+        {% endif %}
+        
+        {% for page_num in pagination.iter_pages() %}
+            {% if page_num %}
+                {% if page_num != pagination.page %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_num }}">{{ page_num }}</a>
+                </li>
+                {% else %}
+                <li class="page-item active">
+                    <span class="page-link">{{ page_num }}</span>
+                </li>
+                {% endif %}
+            {% else %}
+            <li class="page-item disabled">
+                <span class="page-link">…</span>
+            </li>
+            {% endif %}
+        {% endfor %}
+        
+        {% if pagination.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ pagination.next_num }}">Следующая</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="text-center py-5">
+    <div class="mb-3">
+        <i class="fas fa-file-alt fa-3x text-muted"></i>
+    </div>
+    <h5 class="text-muted">Шаблонов пока нет</h5>
+    <p class="text-muted">Создайте первый шаблон для быстрого создания рассылок</p>
+    <a href="/broadcasts/templates/create" class="btn btn-primary">
+        ➕ Создать шаблон
+    </a>
+</div>
+{% endif %}
+
+<!-- Модальное окно предварительного просмотра -->
+<div class="modal fade" id="previewModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">👁️ Предварительный просмотр шаблона</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="templatePreviewContent">
+                    <!-- Содержимое шаблона -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    Закрыть
+                </button>
+                <button type="button" class="btn btn-primary" id="useTemplateBtn">
+                    📋 Использовать шаблон
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Фильтрация шаблонов
+function filterTemplates() {
+    const categoryFilter = document.getElementById('categoryFilter').value.toLowerCase();
+    const searchFilter = document.getElementById('searchFilter').value.toLowerCase();
+    const templateItems = document.querySelectorAll('.template-item');
+    
+    templateItems.forEach(item => {
+        const category = item.dataset.category.toLowerCase();
+        const name = item.dataset.name;
+        const content = item.dataset.content;
+        
+        const categoryMatch = !categoryFilter || category === categoryFilter;
+        const searchMatch = !searchFilter || 
+            name.includes(searchFilter) || 
+            content.includes(searchFilter);
+        
+        if (categoryMatch && searchMatch) {
+            item.style.display = 'block';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+}
+
+function clearFilters() {
+    document.getElementById('categoryFilter').value = '';
+    document.getElementById('searchFilter').value = '';
+    filterTemplates();
+}
+
+// Обработчики событий для фильтров
+document.getElementById('categoryFilter').addEventListener('change', filterTemplates);
+document.getElementById('searchFilter').addEventListener('input', filterTemplates);
+
+// Функции управления шаблонами
+function useTemplate(templateId) {
+    // Перенаправляем на создание рассылки с выбранным шаблоном
+    window.location.href = `/broadcasts/create?template=${templateId}`;
+}
+
+function editTemplate(templateId) {
+    // Перенаправляем на редактирование шаблона
+    window.location.href = `/broadcasts/templates/${templateId}/edit`;
+}
+
+async function deleteTemplate(templateId) {
+    if (!confirm('Удалить шаблон? Это действие нельзя отменить.')) return;
+    
+    try {
+        const response = await fetch(`/api/templates/${templateId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert('Ошибка удаления шаблона');
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка удаления шаблона');
+    }
+}
+
+// Предварительный просмотр шаблона
+function previewTemplate(templateId, templateName, templateContent) {
+    document.getElementById('templatePreviewContent').innerHTML = templateContent;
+    document.querySelector('#previewModal .modal-title').textContent = `👁️ ${templateName}`;
+    
+    const useBtn = document.getElementById('useTemplateBtn');
+    useBtn.onclick = () => useTemplate(templateId);
+    
+    new bootstrap.Modal(document.getElementById('previewModal')).show();
+}
+
+// Добавляем обработчик клика на карточки шаблонов для предварительного просмотра
+document.addEventListener('DOMContentLoaded', function() {
+    const templateCards = document.querySelectorAll('.template-card');
+    
+    templateCards.forEach(card => {
+        card.addEventListener('click', function(e) {
+            // Игнорируем клики на кнопки
+            if (e.target.closest('.btn-group')) return;
+            
+            const templateItem = this.closest('.template-item');
+            const templateId = templateItem.querySelector('[onclick*="useTemplate"]').onclick.toString().match(/\d+/)[0];
+            const templateName = templateItem.querySelector('.card-title').textContent;
+            const templateContent = templateItem.querySelector('.template-preview').innerHTML;
+            
+            previewTemplate(templateId, templateName, templateContent);
+        });
+    });
+});
+
+// Горячие клавиши
+document.addEventListener('keydown', function(e) {
+    // Ctrl+N - создать новый шаблон
+    if (e.ctrlKey && e.key === 'n') {
+        e.preventDefault();
+        window.location.href = '/broadcasts/templates/create';
+    }
+    
+    // Escape - очистить фильтры
+    if (e.key === 'Escape') {
+        clearFilters();
+    }
+});
+</script>
+{% endblock %}

@@ -356,7 +356,6 @@ class YooKassaPaymentService:
         """
         try:
             from datetime import datetime, timedelta
-            import aiosqlite
 
             stats = {
                 'today': {'count': 0, 'amount': 0, 'successful': 0, 'pending': 0, 'failed': 0},
@@ -365,10 +364,24 @@ class YooKassaPaymentService:
                 'total': {'count': 0, 'amount': 0, 'successful': 0, 'pending': 0, 'failed': 0}
             }
 
-            async with aiosqlite.connect(self.db.db_path) as db:
-                # Статистика за сегодня - ТОЛЬКО успешные платежи
-                today = datetime.now().date()
-                cursor = await db.execute("""
+            # Используем UniversalDatabase вместо прямого подключения к SQLite
+            await self.db.adapter.connect()
+            # Статистика за сегодня - ТОЛЬКО успешные платежи
+            today = datetime.now().date()
+
+            if self.db.adapter.db_type == 'postgresql':
+                query = """
+                    SELECT
+                        COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful_count,
+                        SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as successful_amount,
+                        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
+                        COUNT(CASE WHEN status IN ('cancelled', 'failed') THEN 1 END) as failed_count
+                    FROM payments
+                    WHERE DATE(created_at) = $1
+                """
+                params = (today,)
+            else:  # SQLite
+                query = """
                     SELECT
                         COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful_count,
                         SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as successful_amount,
@@ -376,20 +389,35 @@ class YooKassaPaymentService:
                         COUNT(CASE WHEN status IN ('cancelled', 'failed') THEN 1 END) as failed_count
                     FROM payments
                     WHERE DATE(created_at) = ?
-                """, (today,))
-                row = await cursor.fetchone()
-                if row:
-                    stats['today'] = {
-                        'count': row[0] or 0,  # Только успешные платежи
-                        'amount': row[1] or 0,  # Только сумма успешных платежей
-                        'successful': row[0] or 0,
-                        'pending': row[2] or 0,
-                        'failed': row[3] or 0
-                    }
+                """
+                params = (today,)
 
-                # Статистика за неделю - ТОЛЬКО успешные платежи
-                week_ago = datetime.now() - timedelta(days=7)
-                cursor = await db.execute("""
+            row = await self.db.adapter.fetch_one(query, params)
+            if row:
+                stats['today'] = {
+                    'count': row[0] or 0,  # Только успешные платежи
+                    'amount': row[1] or 0,  # Только сумма успешных платежей
+                    'successful': row[0] or 0,
+                    'pending': row[2] or 0,
+                    'failed': row[3] or 0
+                }
+
+            # Статистика за неделю - ТОЛЬКО успешные платежи
+            week_ago = datetime.now() - timedelta(days=7)
+
+            if self.db.adapter.db_type == 'postgresql':
+                query = """
+                    SELECT
+                        COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful_count,
+                        SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as successful_amount,
+                        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
+                        COUNT(CASE WHEN status IN ('cancelled', 'failed') THEN 1 END) as failed_count
+                    FROM payments
+                    WHERE created_at >= $1
+                """
+                params = (week_ago,)
+            else:  # SQLite
+                query = """
                     SELECT
                         COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful_count,
                         SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as successful_amount,
@@ -397,35 +425,38 @@ class YooKassaPaymentService:
                         COUNT(CASE WHEN status IN ('cancelled', 'failed') THEN 1 END) as failed_count
                     FROM payments
                     WHERE created_at >= ?
-                """, (week_ago,))
-                row = await cursor.fetchone()
-                if row:
-                    stats['week'] = {
-                        'count': row[0] or 0,  # Только успешные платежи
-                        'amount': row[1] or 0,  # Только сумма успешных платежей
-                        'successful': row[0] or 0,
-                        'pending': row[2] or 0,
-                        'failed': row[3] or 0
-                    }
+                """
+                params = (week_ago,)
 
-                # Общая статистика - ТОЛЬКО успешные платежи
-                cursor = await db.execute("""
-                    SELECT
-                        COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful_count,
-                        SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as successful_amount,
-                        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
-                        COUNT(CASE WHEN status IN ('cancelled', 'failed') THEN 1 END) as failed_count
-                    FROM payments
-                """)
-                row = await cursor.fetchone()
-                if row:
-                    stats['total'] = {
-                        'count': row[0] or 0,  # Только успешные платежи
-                        'amount': row[1] or 0,  # Только сумма успешных платежей
-                        'successful': row[0] or 0,
-                        'pending': row[2] or 0,
-                        'failed': row[3] or 0
-                    }
+            row = await self.db.adapter.fetch_one(query, params)
+            if row:
+                stats['week'] = {
+                    'count': row[0] or 0,  # Только успешные платежи
+                    'amount': row[1] or 0,  # Только сумма успешных платежей
+                    'successful': row[0] or 0,
+                    'pending': row[2] or 0,
+                    'failed': row[3] or 0
+                }
+
+            # Общая статистика - ТОЛЬКО успешные платежи
+            query = """
+                SELECT
+                    COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful_count,
+                    SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as successful_amount,
+                    COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
+                    COUNT(CASE WHEN status IN ('cancelled', 'failed') THEN 1 END) as failed_count
+                FROM payments
+            """
+
+            row = await self.db.adapter.fetch_one(query)
+            if row:
+                stats['total'] = {
+                    'count': row[0] or 0,  # Только успешные платежи
+                    'amount': row[1] or 0,  # Только сумма успешных платежей
+                    'successful': row[0] or 0,
+                    'pending': row[2] or 0,
+                    'failed': row[3] or 0
+                }
 
             logger.info(f"📊 Статистика платежей получена:")
             logger.info(f"  - Сегодня: {stats['today']['successful']} успешных из {stats['today']['successful'] + stats['today']['pending'] + stats['today']['failed']} всего")
@@ -442,6 +473,11 @@ class YooKassaPaymentService:
                 'month': {'count': 0, 'amount': 0, 'successful': 0, 'pending': 0, 'failed': 0},
                 'total': {'count': 0, 'amount': 0, 'successful': 0, 'pending': 0, 'failed': 0}
             }
+        finally:
+            try:
+                await self.db.adapter.disconnect()
+            except:
+                pass
 
 
 def create_payment_service(provider_token: str, currency: str = "RUB", 

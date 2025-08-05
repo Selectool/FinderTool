@@ -548,12 +548,17 @@ async def get_broadcast_logs(
     if not broadcast:
         raise HTTPException(status_code=404, detail="Рассылка не найдена")
 
-    logs = await db.get_broadcast_logs(broadcast_id, page, per_page, status)
+    logs_data = await db.get_broadcast_logs(broadcast_id, page, per_page, status)
 
     return {
         "broadcast_id": broadcast_id,
-        "logs": logs["logs"],
-        "pagination": logs["pagination"]
+        "logs": logs_data["logs"],
+        "pagination": {
+            "total": logs_data["total"],
+            "page": logs_data["page"],
+            "per_page": logs_data["per_page"],
+            "pages": logs_data["pages"]
+        }
     }
 
 

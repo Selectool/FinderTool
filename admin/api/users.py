@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, B
 from typing import Optional, List
 from datetime import datetime, timedelta
 import asyncio
+import json
 
 from ..auth.permissions import (
     RequireUserView, RequireUserEdit, get_current_active_user,
@@ -166,63 +167,7 @@ async def update_user(
     return UserResponse(**updated_user)
 
 
-@router.post("/{user_id}/subscription")
-@log_admin_action("update_subscription", "users")
-async def update_user_subscription(
-    user_id: int,
-    subscription_data: SubscriptionUpdateRequest,
-    current_user = Depends(RequireUserEdit),
-    db: UniversalDatabase = Depends(get_db)
-):
-    """Управление подпиской пользователя"""
-    # Проверяем существование пользователя
-    user_data = await db.get_user(user_id)
-    if not user_data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Пользователь не найден"
-        )
-
-    if subscription_data.action == "activate":
-        await db.subscribe_user(user_id, subscription_data.months)
-        message = f"Подписка активирована на {subscription_data.months} мес."
-
-    elif subscription_data.action == "extend":
-        # Продлеваем существующую подписку
-        current_end = user_data.get("subscription_end")
-        if current_end and datetime.fromisoformat(current_end) > datetime.now():
-            # Продлеваем от текущей даты окончания
-            base_date = datetime.fromisoformat(current_end)
-        else:
-            # Продлеваем от текущей даты
-            base_date = datetime.now()
-
-        new_end = base_date + timedelta(days=30 * subscription_data.months)
-
-        import aiosqlite
-        async with aiosqlite.connect(db.db_path) as conn:
-            await conn.execute("""
-                UPDATE users
-                SET is_subscribed = TRUE, subscription_end = ?
-                WHERE user_id = ?
-            """, (new_end, user_id))
-            await conn.commit()
-
-        message = f"Подписка продлена на {subscription_data.months} мес."
-
-    elif subscription_data.action == "deactivate":
-        import aiosqlite
-        async with aiosqlite.connect(db.db_path) as conn:
-            await conn.execute("""
-                UPDATE users
-                SET is_subscribed = FALSE, subscription_end = NULL
-                WHERE user_id = ?
-            """, (user_id,))
-            await conn.commit()
-
-        message = "Подписка деактивирована"
-
-    return {"message": message, "user_id": user_id}
+# Удален дублирующийся endpoint - используется только manage_user_subscription ниже
 
 
 @router.get("/{user_id}/stats", response_model=UserStatsResponse)
@@ -242,44 +187,66 @@ async def get_user_stats(
         )
 
     # Получаем статистику запросов
-    import aiosqlite
-    async with aiosqlite.connect(db.db_path) as conn:
-        conn.row_factory = aiosqlite.Row
+    await db.adapter.connect()
 
+    try:
         # Общее количество запросов
-        cursor = await conn.execute(
-            "SELECT COUNT(*) as total FROM requests WHERE user_id = ?",
-            (user_id,)
-        )
-        total_requests = (await cursor.fetchone())["total"]
+        if db.adapter.db_type == 'sqlite':
+            query = "SELECT COUNT(*) as total FROM requests WHERE user_id = ?"
+            params = (user_id,)
+        else:  # PostgreSQL
+            query = "SELECT COUNT(*) as total FROM requests WHERE user_id = $1"
+            params = (user_id,)
+
+        result = await db.adapter.fetch_one(query, params)
+        total_requests = db._extract_count(result) if result else 0
 
         # Запросы за сегодня
-        cursor = await conn.execute("""
-            SELECT COUNT(*) as today FROM requests
-            WHERE user_id = ? AND DATE(created_at) = DATE('now')
-        """, (user_id,))
-        requests_today = (await cursor.fetchone())["today"]
+        if db.adapter.db_type == 'sqlite':
+            query = "SELECT COUNT(*) as today FROM requests WHERE user_id = ? AND DATE(created_at) = DATE('now')"
+            params = (user_id,)
+        else:  # PostgreSQL
+            query = "SELECT COUNT(*) as today FROM requests WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE"
+            params = (user_id,)
+
+        result = await db.adapter.fetch_one(query, params)
+        requests_today = db._extract_count(result) if result else 0
 
         # Запросы за неделю
-        cursor = await conn.execute("""
-            SELECT COUNT(*) as week FROM requests
-            WHERE user_id = ? AND DATE(created_at) >= DATE('now', '-7 days')
-        """, (user_id,))
-        requests_week = (await cursor.fetchone())["week"]
+        if db.adapter.db_type == 'sqlite':
+            query = "SELECT COUNT(*) as week FROM requests WHERE user_id = ? AND created_at >= DATE('now', '-7 days')"
+            params = (user_id,)
+        else:  # PostgreSQL
+            query = "SELECT COUNT(*) as week FROM requests WHERE user_id = $1 AND created_at >= CURRENT_DATE - INTERVAL '7 days'"
+            params = (user_id,)
+
+        result = await db.adapter.fetch_one(query, params)
+        requests_week = db._extract_count(result) if result else 0
 
         # Запросы за месяц
-        cursor = await conn.execute("""
-            SELECT COUNT(*) as month FROM requests
-            WHERE user_id = ? AND DATE(created_at) >= DATE('now', '-30 days')
-        """, (user_id,))
-        requests_month = (await cursor.fetchone())["month"]
+        if db.adapter.db_type == 'sqlite':
+            query = "SELECT COUNT(*) as month FROM requests WHERE user_id = ? AND created_at >= DATE('now', '-30 days')"
+            params = (user_id,)
+        else:  # PostgreSQL
+            query = "SELECT COUNT(*) as month FROM requests WHERE user_id = $1 AND created_at >= CURRENT_DATE - INTERVAL '30 days'"
+            params = (user_id,)
+
+        result = await db.adapter.fetch_one(query, params)
+        requests_month = db._extract_count(result) if result else 0
 
         # Первый и последний запрос
-        cursor = await conn.execute("""
-            SELECT MIN(created_at) as first_request, MAX(created_at) as last_request
-            FROM requests WHERE user_id = ?
-        """, (user_id,))
-        request_dates = await cursor.fetchone()
+        if db.adapter.db_type == 'sqlite':
+            query = "SELECT MIN(created_at) as first_request, MAX(created_at) as last_request FROM requests WHERE user_id = ?"
+            params = (user_id,)
+        else:  # PostgreSQL
+            query = "SELECT MIN(created_at) as first_request, MAX(created_at) as last_request FROM requests WHERE user_id = $1"
+            params = (user_id,)
+
+        result = await db.adapter.fetch_one(query, params)
+        request_dates = dict(result) if result else {"first_request": None, "last_request": None}
+
+    finally:
+        await db.adapter.disconnect()
 
     return UserStatsResponse(
         user_id=user_id,
@@ -287,11 +254,172 @@ async def get_user_stats(
         requests_today=requests_today,
         requests_week=requests_week,
         requests_month=requests_month,
-        first_request=request_dates["first_request"],
-        last_request=request_dates["last_request"],
+        first_request=request_dates.get("first_request"),
+        last_request=request_dates.get("last_request"),
         favorite_channels=[],  # TODO: Реализовать анализ популярных каналов
         subscription_history=[]  # TODO: Реализовать историю подписок
     )
+
+
+@router.post("/{user_id}/subscription")
+@log_admin_action("manage_subscription", "users")
+async def manage_user_subscription(
+    user_id: int,
+    request: Request,
+    current_user = Depends(RequireUserEdit),
+    db: UniversalDatabase = Depends(get_db)
+):
+    """Управление подпиской пользователя"""
+    # Проверяем существование пользователя
+    user_data = await db.get_user(user_id)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден"
+        )
+
+    try:
+        body = await request.json()
+        action = body.get('action')  # 'activate', 'extend' или 'cancel'
+        duration_days = body.get('duration_days', 30)
+
+        if action in ['activate', 'extend']:
+            # Активируем или продлеваем подписку
+            await db.adapter.connect()
+
+            # Определяем новую дату окончания подписки
+            if action == 'extend' and user_data.get('is_subscribed') and user_data.get('subscription_end'):
+                # Продлеваем от текущей даты окончания
+                current_end = user_data['subscription_end']
+                if isinstance(current_end, str):
+                    from datetime import datetime
+                    current_end = datetime.fromisoformat(current_end.replace('Z', '+00:00'))
+
+                # Если подписка еще активна, продлеваем от даты окончания
+                if current_end > datetime.now():
+                    new_end = current_end + timedelta(days=duration_days)
+                else:
+                    # Если подписка истекла, продлеваем от текущего момента
+                    new_end = datetime.now() + timedelta(days=duration_days)
+            else:
+                # Активируем новую подписку от текущего момента
+                new_end = datetime.now() + timedelta(days=duration_days)
+
+            if db.adapter.db_type == 'sqlite':
+                query = """
+                    UPDATE users
+                    SET is_subscribed = TRUE, subscription_end = ?
+                    WHERE user_id = ?
+                """
+                params = (new_end, user_id)
+            else:  # PostgreSQL
+                query = """
+                    UPDATE users
+                    SET is_subscribed = TRUE, subscription_end = $1
+                    WHERE user_id = $2
+                """
+                params = (new_end, user_id)
+
+            await db.adapter.execute(query, params)
+            await db.adapter.disconnect()
+
+            action_text = "активирована" if action == 'activate' else "продлена"
+            return {"success": True, "message": f"Подписка {action_text} на {duration_days} дней до {new_end.strftime('%d.%m.%Y')}"}
+
+        elif action == 'cancel':
+            # Отменяем подписку через прямой SQL запрос
+            await db.adapter.connect()
+
+            if db.adapter.db_type == 'sqlite':
+                query = """
+                    UPDATE users
+                    SET is_subscribed = FALSE, subscription_end = NULL
+                    WHERE user_id = ?
+                """
+                params = (user_id,)
+            else:  # PostgreSQL
+                query = """
+                    UPDATE users
+                    SET is_subscribed = FALSE, subscription_end = NULL
+                    WHERE user_id = $1
+                """
+                params = (user_id,)
+
+            await db.adapter.execute(query, params)
+            await db.adapter.disconnect()
+
+            return {"success": True, "message": "Подписка отменена"}
+        else:
+            return {"success": False, "message": "Неизвестное действие"}
+
+    except Exception as e:
+        logger.error(f"Ошибка управления подпиской пользователя {user_id}: {e}")
+        return {"success": False, "message": "Внутренняя ошибка сервера"}
+
+
+@router.get("/requests/{request_id}")
+@log_admin_action("view_request_details", "requests")
+async def get_request_details(
+    request_id: int,
+    current_user = Depends(RequireUserView),
+    db: UniversalDatabase = Depends(get_db)
+):
+    """Получить детали конкретного запроса"""
+    try:
+        await db.adapter.connect()
+
+        # Получаем детали запроса
+        if db.adapter.db_type == 'sqlite':
+            query = """
+                SELECT r.*, u.username as user_username
+                FROM requests r
+                LEFT JOIN users u ON r.user_id = u.user_id
+                WHERE r.id = ?
+            """
+            params = (request_id,)
+        else:  # PostgreSQL
+            query = """
+                SELECT r.*, u.username as user_username
+                FROM requests r
+                LEFT JOIN users u ON r.user_id = u.user_id
+                WHERE r.id = $1
+            """
+            params = (request_id,)
+
+        result = await db.adapter.fetch_one(query, params)
+        await db.adapter.disconnect()
+
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Запрос не найден"
+            )
+
+        request_data = dict(result)
+
+        # Парсим JSON поля если они есть
+        if request_data.get('channels_input'):
+            try:
+                if isinstance(request_data['channels_input'], str):
+                    request_data['channels_input'] = json.loads(request_data['channels_input'])
+            except json.JSONDecodeError:
+                request_data['channels_input'] = []
+
+        if request_data.get('results'):
+            try:
+                if isinstance(request_data['results'], str):
+                    request_data['results'] = json.loads(request_data['results'])
+            except json.JSONDecodeError:
+                request_data['results'] = []
+
+        return request_data
+
+    except Exception as e:
+        logger.error(f"Ошибка получения деталей запроса {request_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при получении деталей запроса"
+        )
 
 
 @router.post("/bulk-action")
@@ -380,51 +508,69 @@ async def get_user_analytics(
     user_stats = stats["users"]
 
     # Вычисляем сегменты
-    total = user_stats["total_users"]
+    total = user_stats.get("total", 0)
     segments = []
 
     if total > 0:
+        # Используем корректные ключи из get_detailed_stats()
+        active_subscribers = user_stats.get("subscribed", 0)
+        unlimited_users = user_stats.get("unlimited", 0)  # Теперь есть в get_detailed_stats()
+        blocked_users = user_stats.get("blocked", 0)
+        new_week = user_stats.get("new_week", 0)  # TODO: добавить в get_detailed_stats()
+
         segments = [
             {
                 "segment_name": "Активные подписчики",
-                "count": user_stats["active_subscribers"],
-                "percentage": round((user_stats["active_subscribers"] / total) * 100, 2),
+                "count": active_subscribers,
+                "percentage": round((active_subscribers / total) * 100, 2),
                 "description": "Пользователи с активной подпиской"
             },
             {
-                "segment_name": "Безлимитные пользователи",
-                "count": user_stats["unlimited_users"],
-                "percentage": round((user_stats["unlimited_users"] / total) * 100, 2),
-                "description": "Пользователи с безлимитным доступом"
+                "segment_name": "Активные пользователи",
+                "count": user_stats.get("active", 0),
+                "percentage": round((user_stats.get("active", 0) / total) * 100, 2),
+                "description": "Активные пользователи (не заблокированы)"
             },
             {
                 "segment_name": "Заблокированные",
-                "count": user_stats["blocked_users"],
-                "percentage": round((user_stats["blocked_users"] / total) * 100, 2),
+                "count": blocked_users,
+                "percentage": round((blocked_users / total) * 100, 2),
                 "description": "Заблокированные пользователи"
-            },
-            {
-                "segment_name": "Новые за неделю",
-                "count": user_stats["new_week"],
-                "percentage": round((user_stats["new_week"] / total) * 100, 2),
-                "description": "Зарегистрированы за последние 7 дней"
             }
         ]
 
+        # Добавляем сегменты только если есть данные
+        if unlimited_users > 0:
+            segments.append({
+                "segment_name": "Безлимитные пользователи",
+                "count": unlimited_users,
+                "percentage": round((unlimited_users / total) * 100, 2),
+                "description": "Пользователи с безлимитным доступом"
+            })
+
+        if new_week > 0:
+            segments.append({
+                "segment_name": "Новые за неделю",
+                "count": new_week,
+                "percentage": round((new_week / total) * 100, 2),
+                "description": "Зарегистрированы за последние 7 дней"
+            })
+
     # Простой расчет роста (можно улучшить)
     growth_rate = 0.0
-    if user_stats["new_month"] > 0 and total > user_stats["new_month"]:
-        growth_rate = round((user_stats["new_month"] / (total - user_stats["new_month"])) * 100, 2)
+    new_month = user_stats.get("new_month", 0)
+    if new_month > 0 and total > new_month:
+        growth_rate = round((new_month / (total - new_month)) * 100, 2)
 
     return UserAnalyticsResponse(
         total_users=total,
-        active_users=user_stats["active_subscribers"] + user_stats["unlimited_users"],
-        new_users_today=user_stats["new_today"],
-        new_users_week=user_stats["new_week"],
-        new_users_month=user_stats["new_month"],
-        subscribers=user_stats["active_subscribers"],
-        unlimited_users=user_stats["unlimited_users"],
-        blocked_users=user_stats["blocked_users"],
+        active_users=user_stats.get("active", 0),
+        new_users_today=user_stats.get("new_today", 0),
+        new_users_week=user_stats.get("new_week", 0),
+        new_users_month=user_stats.get("new_month", 0),
+        subscribers=user_stats.get("subscribed", 0),
+        unlimited_users=user_stats.get("unlimited", 0),
+        blocked_users=user_stats.get("blocked", 0),
         segments=segments,
         growth_rate=growth_rate,
         retention_rate=85.0  # TODO: Реализовать расчет retention rate

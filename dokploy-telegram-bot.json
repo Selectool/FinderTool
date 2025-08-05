@@ -1,0 +1,56 @@
+{
+  "name": "telegram-bot",
+  "description": "Telegram Channel Finder Bot Service",
+  "deploy": {
+    "startCommand": "python -c \"import asyncio; from bot.main import main; asyncio.run(main())\"",
+    "healthcheckCommand": "python -c \"import asyncio; from bot.health_check import check_bot_health; exit(0 if asyncio.run(check_bot_health()) else 1)\"",
+    "restartPolicy": "always",
+    "dockerfile": "Dockerfile.telegram-bot"
+  },
+  "build": {
+    "env": {
+      "PYTHONUNBUFFERED": "1",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+      "PIP_DEFAULT_TIMEOUT": "100",
+      "ENVIRONMENT": "production",
+      "SERVICE_TYPE": "telegram-bot"
+    }
+  },
+  "runtime": {
+    "env": {
+      "ENVIRONMENT": "production",
+      "DATABASE_TYPE": "postgresql",
+      "DATABASE_URL": "postgresql://findertool_user:Findertool1999!@findertool-hyvrte:5432/findertool_prod",
+      "LOG_LEVEL": "INFO",
+      "SERVICE_TYPE": "telegram-bot",
+      "BOT_TOKEN": "${BOT_TOKEN}",
+      "API_ID": "${API_ID}",
+      "API_HASH": "${API_HASH}",
+      "ADMIN_USER_ID": "${ADMIN_USER_ID}",
+      "SESSION_STRING": "${SESSION_STRING}",
+      "SUBSCRIPTION_PRICE": "349",
+      "FREE_REQUESTS_LIMIT": "3",
+      "YOOKASSA_MODE": "LIVE",
+      "YOOKASSA_LIVE_TOKEN": "${YOOKASSA_LIVE_TOKEN}",
+      "YOOKASSA_SECRET_KEY": "${YOOKASSA_SECRET_KEY}",
+      "YOOKASSA_SHOP_ID": "${YOOKASSA_SHOP_ID}",
+      "YOOKASSA_CURRENCY": "RUB",
+      "YOOKASSA_PRODUCT_DESCRIPTION": "Подписка Channel Finder Bot на месяц",
+      "YOOKASSA_VAT_CODE": "1",
+      "YOOKASSA_RETURN_URL": "https://t.me/FinderTool_bot"
+    }
+  },
+  "services": {
+    "postgres": {
+      "required": true,
+      "waitFor": true,
+      "host": "findertool-hyvrte",
+      "port": 5432
+    }
+  },
+  "resources": {
+    "memory": "512MB",
+    "cpu": "0.5"
+  }
+}

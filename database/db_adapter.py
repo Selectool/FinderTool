@@ -10,63 +10,130 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 class DatabaseAdapter:
-    """PostgreSQL адаптер базы данных"""
+    """Production-ready PostgreSQL адаптер с connection pooling"""
 
     def __init__(self, database_url: str):
         self.database_url = database_url
         self.db_type = 'postgresql'  # Только PostgreSQL
         self.connection = None
+        self.connection_pool = None
+        self._connection_retries = 3
+        self._connection_timeout = 30
 
         if not (database_url.startswith('postgresql://') or database_url.startswith('postgres://')):
             raise ValueError("Поддерживается только PostgreSQL. DATABASE_URL должен начинаться с 'postgresql://' или 'postgres://'")
 
         logger.debug(f"Инициализирован PostgreSQL адаптер")
-    
+
     async def connect(self):
-        """Установить соединение с PostgreSQL"""
+        """Установить соединение с PostgreSQL с retry логикой"""
         import asyncpg
-        self.connection = await asyncpg.connect(self.database_url)
-            
+
+        for attempt in range(self._connection_retries):
+            try:
+                if self.connection and not self.connection.is_closed():
+                    return  # Соединение уже активно
+
+                self.connection = await asyncpg.connect(
+                    self.database_url,
+                    command_timeout=self._connection_timeout
+                )
+                logger.debug(f"✅ PostgreSQL соединение установлено (попытка {attempt + 1})")
+                return
+
+            except Exception as e:
+                logger.warning(f"⚠️ Ошибка подключения к PostgreSQL (попытка {attempt + 1}/{self._connection_retries}): {e}")
+                if attempt == self._connection_retries - 1:
+                    logger.error(f"❌ Не удалось подключиться к PostgreSQL после {self._connection_retries} попыток")
+                    raise
+                await asyncio.sleep(1)  # Пауза перед повторной попыткой
+
     async def disconnect(self):
         """Закрыть соединение с базой данных"""
-        if self.connection:
-            await self.connection.close()
+        try:
+            if self.connection and not self.connection.is_closed():
+                await self.connection.close()
+                logger.debug("✅ PostgreSQL соединение закрыто")
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка при закрытии соединения: {e}")
+        finally:
+            self.connection = None
             
-    async def execute(self, query: str, params: tuple = None) -> Any:
-        """Выполнить SQL запрос в PostgreSQL"""
-        if not self.connection:
+    async def _ensure_connection(self):
+        """Убедиться, что соединение активно"""
+        if not self.connection or self.connection.is_closed():
             await self.connect()
 
-        if params:
-            # Конвертируем ? в $1, $2, etc для PostgreSQL
-            pg_query = self._convert_query_to_pg(query)
-            return await self.connection.execute(pg_query, *params)
-        else:
-            return await self.connection.execute(query)
+    async def execute(self, query: str, params: tuple = None) -> Any:
+        """Выполнить SQL запрос в PostgreSQL с автоматическим переподключением"""
+        await self._ensure_connection()
+
+        try:
+            if params:
+                # Конвертируем ? в $1, $2, etc для PostgreSQL
+                pg_query = self._convert_query_to_pg(query)
+                return await self.connection.execute(pg_query, *params)
+            else:
+                return await self.connection.execute(query)
+        except Exception as e:
+            if "connection" in str(e).lower() or "closed" in str(e).lower():
+                logger.warning(f"⚠️ Соединение потеряно, переподключаемся: {e}")
+                await self.connect()
+                # Повторяем запрос
+                if params:
+                    pg_query = self._convert_query_to_pg(query)
+                    return await self.connection.execute(pg_query, *params)
+                else:
+                    return await self.connection.execute(query)
+            raise
     
     async def fetch_one(self, query: str, params: tuple = None) -> Optional[Dict]:
-        """Получить одну запись из PostgreSQL"""
-        if not self.connection:
-            await self.connect()
+        """Получить одну запись из PostgreSQL с автоматическим переподключением"""
+        await self._ensure_connection()
 
-        if params:
-            pg_query = self._convert_query_to_pg(query)
-            row = await self.connection.fetchrow(pg_query, *params)
-        else:
-            row = await self.connection.fetchrow(query)
-        return dict(row) if row else None
-    
+        try:
+            if params:
+                pg_query = self._convert_query_to_pg(query)
+                row = await self.connection.fetchrow(pg_query, *params)
+            else:
+                row = await self.connection.fetchrow(query)
+            return dict(row) if row else None
+        except Exception as e:
+            if "connection" in str(e).lower() or "closed" in str(e).lower():
+                logger.warning(f"⚠️ Соединение потеряно при fetch_one, переподключаемся: {e}")
+                await self.connect()
+                # Повторяем запрос
+                if params:
+                    pg_query = self._convert_query_to_pg(query)
+                    row = await self.connection.fetchrow(pg_query, *params)
+                else:
+                    row = await self.connection.fetchrow(query)
+                return dict(row) if row else None
+            raise
+
     async def fetch_all(self, query: str, params: tuple = None) -> List[Dict]:
-        """Получить все записи из PostgreSQL"""
-        if not self.connection:
-            await self.connect()
+        """Получить все записи из PostgreSQL с автоматическим переподключением"""
+        await self._ensure_connection()
 
-        if params:
-            pg_query = self._convert_query_to_pg(query)
-            rows = await self.connection.fetch(pg_query, *params)
-        else:
-            rows = await self.connection.fetch(query)
-        return [dict(row) for row in rows]
+        try:
+            if params:
+                pg_query = self._convert_query_to_pg(query)
+                rows = await self.connection.fetch(pg_query, *params)
+            else:
+                rows = await self.connection.fetch(query)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            if "connection" in str(e).lower() or "closed" in str(e).lower():
+                logger.warning(f"⚠️ Соединение потеряно при fetch_all, переподключаемся: {e}")
+                await self.connect()
+                # Повторяем запрос
+                if params:
+                    pg_query = self._convert_query_to_pg(query)
+                    rows = await self.connection.fetch(pg_query, *params)
+                else:
+                    rows = await self.connection.fetch(query)
+                return [dict(row) for row in rows]
+            raise
     
     def _convert_query_to_pg(self, query: str) -> str:
         """Конвертировать SQLite запрос в PostgreSQL формат"""
@@ -123,6 +190,7 @@ class DatabaseAdapter:
                 last_payment_date TIMESTAMP,
                 payment_provider TEXT,
                 role TEXT DEFAULT 'user',
+                unlimited_access BOOLEAN DEFAULT FALSE,
                 blocked BOOLEAN DEFAULT FALSE,
                 bot_blocked BOOLEAN DEFAULT FALSE,
                 blocked_at TIMESTAMP

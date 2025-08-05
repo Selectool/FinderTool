@@ -1,12 +1,21 @@
 """
 Система прав доступа для рассылок
+Production-Ready Universal Authentication Support
 """
-from fastapi import HTTPException, Depends
+from fastapi import HTTPException, Depends, Request
 from typing import Optional
+import logging
 
-from .permissions import get_current_user
+from .permissions import get_current_user, get_current_user_universal
 from .models import TokenData
 from database.universal_database import UniversalDatabase
+
+logger = logging.getLogger(__name__)
+
+
+async def get_db(request: Request) -> UniversalDatabase:
+    """Получить объект базы данных из middleware"""
+    return request.state.db
 
 
 class BroadcastPermissions:
@@ -43,12 +52,17 @@ class BroadcastPermissions:
 
     async def can_view_broadcasts(self, user: TokenData) -> bool:
         """Может ли пользователь просматривать рассылки"""
+        logger.debug(f"🔒 Проверка прав на просмотр рассылок для {user.username} (роль: {user.role})")
+
         if user.role in ['admin', 'super_admin']:
+            logger.debug(f"✅ Пользователь {user.username} имеет административную роль")
             return True
 
         # Проверяем специальные права
         user_permissions = await self._get_user_permissions_cached(user.user_id)
-        return 'broadcasts_view' in user_permissions
+        has_permission = 'broadcasts_view' in user_permissions
+        logger.debug(f"🔒 Специальные права для {user.username}: {user_permissions}, результат: {has_permission}")
+        return has_permission
     
     async def can_create_broadcasts(self, user: TokenData) -> bool:
         """Может ли пользователь создавать рассылки"""
@@ -90,66 +104,94 @@ async def get_db() -> UniversalDatabase:
 
 
 async def RequireBroadcastView(
-    current_user: TokenData = Depends(get_current_user),
+    current_user: TokenData = Depends(get_current_user_universal),
     db: UniversalDatabase = Depends(get_db)
 ) -> TokenData:
-    """Требует права на просмотр рассылок"""
+    """
+    Production-Ready права на просмотр рассылок
+    Поддерживает аутентификацию через Authorization header и cookies
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.debug(f"🔒 RequireBroadcastView: проверка прав для {current_user.username} (роль: {current_user.role})")
+
     permissions = BroadcastPermissions(db)
-    
+
     if not await permissions.can_view_broadcasts(current_user):
+        logger.warning(f"❌ Недостаточно прав для просмотра рассылок: {current_user.username}")
         raise HTTPException(
             status_code=403,
             detail="Недостаточно прав для просмотра рассылок"
         )
-    
+
+    logger.debug(f"✅ Права на просмотр рассылок подтверждены для {current_user.username}")
     return current_user
 
 
 async def RequireBroadcastCreate(
-    current_user: TokenData = Depends(get_current_user),
+    current_user: TokenData = Depends(get_current_user_universal),
     db: UniversalDatabase = Depends(get_db)
 ) -> TokenData:
-    """Требует права на создание рассылок"""
+    """Production-Ready права на создание рассылок"""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.debug(f"🔒 RequireBroadcastCreate: проверка прав для {current_user.username}")
+
     permissions = BroadcastPermissions(db)
-    
+
     if not await permissions.can_create_broadcasts(current_user):
+        logger.warning(f"❌ Недостаточно прав для создания рассылок: {current_user.username}")
         raise HTTPException(
             status_code=403,
             detail="Недостаточно прав для создания рассылок"
         )
-    
+
     return current_user
 
 
 async def RequireBroadcastSend(
-    current_user: TokenData = Depends(get_current_user),
+    current_user: TokenData = Depends(get_current_user_universal),
     db: UniversalDatabase = Depends(get_db)
 ) -> TokenData:
-    """Требует права на отправку рассылок"""
+    """Production-Ready права на отправку рассылок"""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.debug(f"🔒 RequireBroadcastSend: проверка прав для {current_user.username}")
+
     permissions = BroadcastPermissions(db)
-    
+
     if not await permissions.can_send_broadcasts(current_user):
+        logger.warning(f"❌ Недостаточно прав для отправки рассылок: {current_user.username}")
         raise HTTPException(
             status_code=403,
             detail="Недостаточно прав для отправки рассылок"
         )
-    
+
     return current_user
 
 
 async def RequireBroadcastManage(
-    current_user: TokenData = Depends(get_current_user),
+    current_user: TokenData = Depends(get_current_user_universal),
     db: UniversalDatabase = Depends(get_db)
 ) -> TokenData:
-    """Требует права на управление рассылками"""
+    """Production-Ready права на управление рассылками"""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.debug(f"🔒 RequireBroadcastManage: проверка прав для {current_user.username}")
+
     permissions = BroadcastPermissions(db)
-    
+
     if not await permissions.can_manage_broadcasts(current_user):
+        logger.warning(f"❌ Недостаточно прав для управления рассылками: {current_user.username}")
         raise HTTPException(
             status_code=403,
             detail="Недостаточно прав для управления рассылками"
         )
-    
+
     return current_user
 
 
