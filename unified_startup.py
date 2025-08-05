@@ -121,15 +121,16 @@ class UnifiedService:
 
         # Возможные имена хостов PostgreSQL в Dokploy (в порядке приоритета)
         possible_hosts = [
-            '185.207.66.201',  # ВНЕШНИЙ IP VPS - наиболее вероятный
-            'findertool-db',   # Dokploy UI имя
+            'findertool-hyvrte',  # ПРАВИЛЬНОЕ ИМЯ из Dokploy Internal Host
+            '185.207.66.201',     # ВНЕШНИЙ IP VPS
+            'findertool-db',      # Альтернативное имя
             'postgres',
             'postgresql',
             'db',
             'database',
             'localhost',
             '127.0.0.1',
-            'postgres-inGABWIP0OB6grXZXTORS',  # По ID сервиса из логов
+            'postgres-inGABWIP0OB6grXZXTORS',  # По ID сервиса
             'findertool-postgres',
             'postgres-service'
         ]
