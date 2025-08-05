@@ -1,11 +1,12 @@
 """
 Модели базы данных с production-ready функциональностью
+ИСПРАВЛЕНО: Использует UniversalDatabase вместо прямого подключения к SQLite
 """
-import aiosqlite
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 import json
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -20,154 +21,334 @@ except ImportError:
 
 
 class Database:
-    def __init__(self, db_path: str = "bot.db"):
-        self.db_path = db_path
+    def __init__(self, database_url: str = None):
+        """
+        ИСПРАВЛЕНО: Теперь использует UniversalDatabase вместо прямого SQLite
+        """
+        from .universal_database import UniversalDatabase
+
+        # Получаем URL базы данных из переменных окружения или параметра
+        self.database_url = database_url or os.getenv('DATABASE_URL')
+        if not self.database_url:
+            raise ValueError("DATABASE_URL обязательна! Укажите PostgreSQL URL в переменных окружения.")
+
+        # Создаем экземпляр UniversalDatabase
+        self.db = UniversalDatabase(self.database_url)
 
         # Инициализируем production-ready менеджер если доступен
         if PRODUCTION_FEATURES_AVAILABLE:
-            self.production_manager = ProductionDatabaseManager(db_path)
+            self.production_manager = ProductionDatabaseManager()
         else:
             self.production_manager = None
 
     async def init_db(self):
-        """Инициализация базы данных"""
-        async with aiosqlite.connect(self.db_path) as db:
+        """
+        Инициализация базы данных
+        ИСПРАВЛЕНО: Использует UniversalDatabase вместо прямого SQLite
+        """
+        try:
+            await self.db.adapter.connect()
+
             # Проверяем, существуют ли основные таблицы
-            cursor = await db.execute("""
-                SELECT name FROM sqlite_master
-                WHERE type='table' AND name IN ('users', 'requests', 'broadcasts', 'payments')
-            """)
-            existing_tables = {row[0] for row in await cursor.fetchall()}
+            if self.db.adapter.db_type == 'sqlite':
+                query = """
+                    SELECT name FROM sqlite_master
+                    WHERE type='table' AND name IN ('users', 'requests', 'broadcasts', 'payments')
+                """
+            else:  # PostgreSQL
+                query = """
+                    SELECT table_name as name FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                    AND table_name IN ('users', 'requests', 'broadcasts', 'payments')
+                """
+
+            result = await self.db.adapter.fetch_all(query)
+            existing_tables = {row[0] if isinstance(row, (list, tuple)) else row['name'] for row in result}
 
             # Создаем только отсутствующие таблицы
             if 'users' not in existing_tables:
-                await db.execute("""
-                    CREATE TABLE users (
-                        user_id INTEGER PRIMARY KEY,
-                        username TEXT,
-                        first_name TEXT,
-                        last_name TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        requests_used INTEGER DEFAULT 0,
-                        is_subscribed BOOLEAN DEFAULT FALSE,
-                        subscription_end TIMESTAMP,
-                        last_request TIMESTAMP,
-                        payment_provider TEXT DEFAULT 'yookassa',
-                        last_payment_date TIMESTAMP,
-                        role TEXT DEFAULT 'user',
-                        blocked BOOLEAN DEFAULT FALSE,
-                        bot_blocked BOOLEAN DEFAULT FALSE
-                    )
-                """)
+                if self.db.adapter.db_type == 'sqlite':
+                    users_sql = """
+                        CREATE TABLE users (
+                            user_id INTEGER PRIMARY KEY,
+                            username TEXT,
+                            first_name TEXT,
+                            last_name TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            requests_used INTEGER DEFAULT 0,
+                            is_subscribed BOOLEAN DEFAULT FALSE,
+                            subscription_end TIMESTAMP,
+                            last_request TIMESTAMP,
+                            payment_provider TEXT DEFAULT 'yookassa',
+                            last_payment_date TIMESTAMP,
+                            role TEXT DEFAULT 'user',
+                            blocked BOOLEAN DEFAULT FALSE,
+                            bot_blocked BOOLEAN DEFAULT FALSE
+                        )
+                    """
+                else:  # PostgreSQL
+                    users_sql = """
+                        CREATE TABLE users (
+                            user_id BIGINT PRIMARY KEY,
+                            username TEXT,
+                            first_name TEXT,
+                            last_name TEXT,
+                            created_at TIMESTAMP DEFAULT NOW(),
+                            requests_used INTEGER DEFAULT 0,
+                            is_subscribed BOOLEAN DEFAULT FALSE,
+                            subscription_end TIMESTAMP,
+                            last_request TIMESTAMP,
+                            payment_provider TEXT DEFAULT 'yookassa',
+                            last_payment_date TIMESTAMP,
+                            role TEXT DEFAULT 'user',
+                            blocked BOOLEAN DEFAULT FALSE,
+                            bot_blocked BOOLEAN DEFAULT FALSE,
+                            unlimited_access BOOLEAN DEFAULT FALSE
+                        )
+                    """
+                await self.db.adapter.execute(users_sql)
 
             if 'requests' not in existing_tables:
-                await db.execute("""
-                    CREATE TABLE requests (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER,
-                        channels_input TEXT,
-                        results TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (user_id) REFERENCES users (user_id)
-                    )
-                """)
+                if self.db.adapter.db_type == 'sqlite':
+                    requests_sql = """
+                        CREATE TABLE requests (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER,
+                            channels_input TEXT,
+                            results TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (user_id) REFERENCES users (user_id)
+                        )
+                    """
+                else:  # PostgreSQL
+                    requests_sql = """
+                        CREATE TABLE requests (
+                            id SERIAL PRIMARY KEY,
+                            user_id BIGINT,
+                            channels_input TEXT,
+                            results TEXT,
+                            created_at TIMESTAMP DEFAULT NOW(),
+                            FOREIGN KEY (user_id) REFERENCES users (user_id)
+                        )
+                    """
+                await self.db.adapter.execute(requests_sql)
 
             if 'broadcasts' not in existing_tables:
-                await db.execute("""
-                    CREATE TABLE broadcasts (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        message_text TEXT,
-                        sent_count INTEGER DEFAULT 0,
-                        failed_count INTEGER DEFAULT 0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        completed BOOLEAN DEFAULT FALSE
-                    )
-                """)
+                if self.db.adapter.db_type == 'sqlite':
+                    broadcasts_sql = """
+                        CREATE TABLE broadcasts (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            message_text TEXT,
+                            sent_count INTEGER DEFAULT 0,
+                            failed_count INTEGER DEFAULT 0,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            completed BOOLEAN DEFAULT FALSE
+                        )
+                    """
+                else:  # PostgreSQL
+                    broadcasts_sql = """
+                        CREATE TABLE broadcasts (
+                            id SERIAL PRIMARY KEY,
+                            message_text TEXT,
+                            sent_count INTEGER DEFAULT 0,
+                            failed_count INTEGER DEFAULT 0,
+                            created_at TIMESTAMP DEFAULT NOW(),
+                            completed BOOLEAN DEFAULT FALSE,
+                            status TEXT DEFAULT 'pending',
+                            target_type TEXT DEFAULT 'all'
+                        )
+                    """
+                await self.db.adapter.execute(broadcasts_sql)
 
             if 'payments' not in existing_tables:
-                await db.execute("""
-                    CREATE TABLE payments (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL,
-                        payment_id TEXT UNIQUE,
-                        amount INTEGER NOT NULL,
-                        currency TEXT DEFAULT 'RUB',
-                        status TEXT DEFAULT 'pending',
-                        provider TEXT DEFAULT 'yookassa',
-                        provider_payment_id TEXT,
-                        invoice_payload TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        completed_at TIMESTAMP,
-                        subscription_months INTEGER DEFAULT 1,
-                        FOREIGN KEY (user_id) REFERENCES users (user_id)
-                    )
-                """)
+                if self.db.adapter.db_type == 'sqlite':
+                    payments_sql = """
+                        CREATE TABLE payments (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER NOT NULL,
+                            payment_id TEXT UNIQUE,
+                            amount INTEGER NOT NULL,
+                            currency TEXT DEFAULT 'RUB',
+                            status TEXT DEFAULT 'pending',
+                            provider TEXT DEFAULT 'yookassa',
+                            provider_payment_id TEXT,
+                            invoice_payload TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            completed_at TIMESTAMP,
+                            subscription_months INTEGER DEFAULT 1,
+                            FOREIGN KEY (user_id) REFERENCES users (user_id)
+                        )
+                    """
+                else:  # PostgreSQL
+                    payments_sql = """
+                        CREATE TABLE payments (
+                            id SERIAL PRIMARY KEY,
+                            user_id BIGINT NOT NULL,
+                            payment_id TEXT UNIQUE,
+                            amount INTEGER NOT NULL,
+                            currency TEXT DEFAULT 'RUB',
+                            status TEXT DEFAULT 'pending',
+                            provider TEXT DEFAULT 'yookassa',
+                            provider_payment_id TEXT,
+                            invoice_payload TEXT,
+                            created_at TIMESTAMP DEFAULT NOW(),
+                            completed_at TIMESTAMP,
+                            subscription_months INTEGER DEFAULT 1,
+                            FOREIGN KEY (user_id) REFERENCES users (user_id)
+                        )
+                    """
+                await self.db.adapter.execute(payments_sql)
 
-            await db.commit()
+            # Коммит не нужен для PostgreSQL (автокоммит), но безопасно для SQLite
+            if self.db.adapter.db_type == 'sqlite':
+                await self.db.adapter.execute("COMMIT")
 
-        # Запускаем миграции для обновления существующих таблиц
-        await self._run_migrations()
+            # Запускаем миграции для обновления существующих таблиц
+            await self._run_migrations()
 
-        # Запускаем миграции для админ-панели только если нужно
-        try:
-            from .admin_migrations import run_admin_migrations
-            await run_admin_migrations(self.db_path)
+            # Запускаем миграции для админ-панели только если нужно
+            try:
+                from .admin_migrations import run_admin_migrations
+                await run_admin_migrations(self.database_url)
+            except Exception as e:
+                logger.error(f"Ошибка выполнения миграций админ-панели: {e}")
+
         except Exception as e:
-            logger.error(f"Ошибка выполнения миграций админ-панели: {e}")
+            logger.error(f"Ошибка инициализации базы данных: {e}")
+            raise
+        finally:
+            try:
+                await self.db.adapter.disconnect()
+            except:
+                pass
 
     async def _run_migrations(self):
-        """Выполнить миграции для обновления существующих таблиц"""
-        async with aiosqlite.connect(self.db_path) as db:
+        """
+        Выполнить миграции для обновления существующих таблиц
+        ИСПРАВЛЕНО: Использует UniversalDatabase
+        """
+        try:
             # Проверяем, какие колонки существуют в таблице users
-            cursor = await db.execute("PRAGMA table_info(users)")
-            existing_columns = {row[1] for row in await cursor.fetchall()}
+            if self.db.adapter.db_type == 'sqlite':
+                query = "PRAGMA table_info(users)"
+                result = await self.db.adapter.fetch_all(query)
+                existing_columns = {row[1] for row in result}
+            else:  # PostgreSQL
+                query = """
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'users' AND table_schema = 'public'
+                """
+                result = await self.db.adapter.fetch_all(query)
+                existing_columns = {row[0] if isinstance(row, (list, tuple)) else row['column_name'] for row in result}
 
             # Список новых колонок для добавления
-            new_columns = {
-                'payment_provider': 'TEXT DEFAULT "yookassa"',
-                'last_payment_date': 'TIMESTAMP',
-                'role': 'TEXT DEFAULT "user"',
-                'blocked': 'BOOLEAN DEFAULT FALSE',
-                'bot_blocked': 'BOOLEAN DEFAULT FALSE'
-            }
+            if self.db.adapter.db_type == 'sqlite':
+                new_columns = {
+                    'payment_provider': 'TEXT DEFAULT "yookassa"',
+                    'last_payment_date': 'TIMESTAMP',
+                    'role': 'TEXT DEFAULT "user"',
+                    'blocked': 'BOOLEAN DEFAULT FALSE',
+                    'bot_blocked': 'BOOLEAN DEFAULT FALSE',
+                    'unlimited_access': 'BOOLEAN DEFAULT FALSE'
+                }
+            else:  # PostgreSQL
+                new_columns = {
+                    'payment_provider': 'TEXT DEFAULT \'yookassa\'',
+                    'last_payment_date': 'TIMESTAMP',
+                    'role': 'TEXT DEFAULT \'user\'',
+                    'blocked': 'BOOLEAN DEFAULT FALSE',
+                    'bot_blocked': 'BOOLEAN DEFAULT FALSE',
+                    'unlimited_access': 'BOOLEAN DEFAULT FALSE'
+                }
 
             # Добавляем отсутствующие колонки
             for column_name, column_def in new_columns.items():
                 if column_name not in existing_columns:
                     try:
-                        await db.execute(f"ALTER TABLE users ADD COLUMN {column_name} {column_def}")
+                        await self.db.adapter.execute(f"ALTER TABLE users ADD COLUMN {column_name} {column_def}")
                         logger.info(f"Добавлена колонка {column_name} в таблицу users")
                     except Exception as e:
                         logger.error(f"Ошибка при добавлении колонки {column_name}: {e}")
 
-            await db.commit()
+        except Exception as e:
+            logger.error(f"Ошибка выполнения миграций: {e}")
+            raise
 
     async def get_user(self, user_id: int) -> Optional[dict]:
-        """Получить пользователя"""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT * FROM users WHERE user_id = ?", (user_id,)
+        """
+        Получить пользователя
+        ИСПРАВЛЕНО: Использует UniversalDatabase
+        """
+        try:
+            await self.db.adapter.connect()
+            result = await self.db.adapter.fetch_one(
+                "SELECT * FROM users WHERE user_id = $1", (user_id,)
             )
-            row = await cursor.fetchone()
-            return dict(row) if row else None
+            if result:
+                # Преобразуем результат в словарь
+                if isinstance(result, dict):
+                    return result
+                else:
+                    # Для случая когда результат - tuple/list
+                    columns = ['user_id', 'username', 'first_name', 'last_name', 'created_at',
+                              'requests_used', 'is_subscribed', 'subscription_end', 'last_request',
+                              'payment_provider', 'last_payment_date', 'role', 'blocked', 'bot_blocked', 'unlimited_access']
+                    return dict(zip(columns, result))
+            return None
+        except Exception as e:
+            logger.error(f"Ошибка получения пользователя {user_id}: {e}")
+            return None
+        finally:
+            try:
+                await self.db.adapter.disconnect()
+            except:
+                pass
 
     async def create_user(self, user_id: int, username: str = None,
                          first_name: str = None, last_name: str = None, role: str = None):
-        """Создать пользователя"""
-        from bot.utils.roles import TelegramUserPermissions
+        """
+        Создать пользователя
+        ИСПРАВЛЕНО: Использует UniversalDatabase
+        """
+        try:
+            from bot.utils.roles import TelegramUserPermissions
 
-        # Определяем роль пользователя
-        if role is None:
-            role = TelegramUserPermissions.get_user_role(user_id)
+            # Определяем роль пользователя
+            if role is None:
+                role = TelegramUserPermissions.get_user_role(user_id)
 
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute("""
-                INSERT OR REPLACE INTO users
-                (user_id, username, first_name, last_name, created_at, role)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (user_id, username, first_name, last_name, datetime.now(), role))
-            await db.commit()
+            await self.db.adapter.connect()
+
+            if self.db.adapter.db_type == 'sqlite':
+                query = """
+                    INSERT OR REPLACE INTO users
+                    (user_id, username, first_name, last_name, created_at, role)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """
+                params = (user_id, username, first_name, last_name, datetime.now(), role)
+            else:  # PostgreSQL
+                query = """
+                    INSERT INTO users
+                    (user_id, username, first_name, last_name, created_at, role)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (user_id) DO UPDATE SET
+                    username = EXCLUDED.username,
+                    first_name = EXCLUDED.first_name,
+                    last_name = EXCLUDED.last_name,
+                    role = EXCLUDED.role
+                """
+                params = (user_id, username, first_name, last_name, datetime.now(), role)
+
+            await self.db.adapter.execute(query, params)
+
+        except Exception as e:
+            logger.error(f"Ошибка создания пользователя {user_id}: {e}")
+            raise
+        finally:
+            try:
+                await self.db.adapter.disconnect()
+            except:
+                pass
 
     async def update_user_requests(self, user_id: int):
         """Увеличить счетчик запросов пользователя"""

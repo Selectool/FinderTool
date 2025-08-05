@@ -125,6 +125,11 @@ async def main():
     from database.universal_database import UniversalDatabase
     db = UniversalDatabase(db_manager.database_url)
     logger.info("Универсальная база данных инициализирована")
+
+    # Инициализация сервиса статистики
+    from services import init_statistics_service
+    stats_service = init_statistics_service(db, cache_ttl=300)  # 5 минут кеш
+    logger.info("✅ Сервис статистики инициализирован")
     
     # Production-ready middleware stack
     if IS_PRODUCTION and PRODUCTION_MODULES_AVAILABLE:

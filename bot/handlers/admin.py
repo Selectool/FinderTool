@@ -80,28 +80,42 @@ async def cmd_admin(message: Message, db: UniversalDatabase):
 
 @router.callback_query(F.data == "admin_stats")
 async def callback_admin_stats(callback: CallbackQuery, db: UniversalDatabase):
-    """Статистика бота"""
+    """
+    Статистика бота
+    ИСПРАВЛЕНО: Использует новый StatisticsService
+    """
     if not await is_admin(callback.from_user.id, db):
         await callback.answer("❌ Нет прав доступа")
         return
-    
-    stats = await db.get_stats()
-    
-    stats_text = f"""
+
+    try:
+        from services import get_statistics_service
+        stats_service = get_statistics_service()
+        stats_data = await stats_service.get_basic_statistics()
+
+        stats_text = f"""
 📊 <b>Статистика бота</b>
 
-👥 Всего пользователей: {stats['total_users']}
-💎 Активных подписчиков: {stats['active_subscribers']}
-🔍 Запросов сегодня: {stats['requests_today']}
+👥 Всего пользователей: {stats_data.total_users}
+💎 Активных подписчиков: {stats_data.active_subscribers}
+🔍 Запросов сегодня: {stats_data.requests_today}
 
-📈 Конверсия в подписку: {(stats['active_subscribers'] / max(stats['total_users'], 1) * 100):.1f}%
-    """
-    
-    await callback.message.edit_text(
-        stats_text,
-        parse_mode="HTML",
-        reply_markup=get_back_keyboard()
-    )
+📈 Конверсия в подписку: {stats_data.conversion_rate:.1f}%
+        """
+
+        await callback.message.edit_text(
+            stats_text,
+            parse_mode="HTML",
+            reply_markup=get_back_keyboard()
+        )
+
+    except Exception as e:
+        logger.error(f"Ошибка получения статистики: {e}")
+        await callback.message.edit_text(
+            "❌ Ошибка получения статистики. Попробуйте позже.",
+            reply_markup=get_back_keyboard()
+        )
+
     await callback.answer()
 
 
@@ -1752,48 +1766,51 @@ async def handle_user_search(message: Message, state: FSMContext, db: UniversalD
 
 @router.message(Command("stats"))
 async def cmd_stats(message: Message, db: UniversalDatabase):
-    """Команда детальной статистики (только для админов)"""
+    """
+    Команда детальной статистики (только для админов)
+    ИСПРАВЛЕНО: Использует новый StatisticsService
+    """
     if not await is_admin(message.from_user.id, db):
         await message.answer("❌ У вас нет прав для выполнения этой команды.")
         return
 
     try:
-        # Получаем базовую статистику
-        stats = await db.get_stats()
+        from services import get_statistics_service
+        stats_service = get_statistics_service()
 
-        # Получаем дополнительную статистику
-        total_requests = await db.get_total_requests_count()
-        avg_requests = total_requests / max(stats['total_users'], 1)
+        # Получаем детальную статистику
+        detailed_stats = await stats_service.get_detailed_statistics()
 
-        # Получаем статистику рассылок
-        try:
-            broadcast_stats = await db.get_broadcasts_stats()
-        except:
-            broadcast_stats = {
-                'total': 0,
-                'completed': 0,
-                'total_sent': 0
-            }
+        if not detailed_stats:
+            await message.answer("❌ Не удалось получить статистику. Попробуйте позже.")
+            return
 
         stats_text = f"""
 📊 <b>Детальная статистика FinderTool</b>
 
 👥 <b>Пользователи:</b>
-• Всего зарегистрировано: {stats['total_users']}
-• Активных подписчиков: {stats['active_subscribers']}
-• Заблокированных: {stats.get('blocked_users', 0)}
+• Всего зарегистрировано: {detailed_stats.get('total_users', 0)}
+• Активных подписчиков: {detailed_stats.get('active_subscribers', 0)}
+• Новых сегодня: {detailed_stats.get('new_users_today', 0)}
+• Заблокированных: {detailed_stats.get('blocked_users', 0)}
 
 🔍 <b>Активность:</b>
-• Всего запросов: {total_requests}
-• Среднее на пользователя: {avg_requests:.1f}
-• Запросов сегодня: {stats['requests_today']}
+• Всего запросов: {detailed_stats.get('total_requests', 0)}
+• Среднее на пользователя: {detailed_stats.get('avg_requests_per_user', 0):.1f}
+• Запросов сегодня: {detailed_stats.get('requests_today', 0)}
+• Запросов за неделю: {detailed_stats.get('requests_week', 0)}
 
 📈 <b>Конверсия:</b>
-• В подписку: {(stats['active_subscribers'] / max(stats['total_users'], 1) * 100):.1f}%
-• Активность: {(stats['requests_today'] / max(stats['total_users'], 1) * 100):.1f}%
+• В подписку: {detailed_stats.get('conversion_rate', 0):.1f}%
+• Активность: {(detailed_stats.get('requests_today', 0) / max(detailed_stats.get('total_users', 1), 1) * 100):.1f}%
+
+💰 <b>Доходы:</b>
+• Сегодня: {detailed_stats.get('revenue_today', 0)} ₽
+• За неделю: {detailed_stats.get('revenue_week', 0)} ₽
+• За месяц: {detailed_stats.get('revenue_month', 0)} ₽
 
 📢 <b>Рассылки:</b>
-• Всего рассылок: {broadcast_stats.get('total', 0)}
+• Всего рассылок: {detailed_stats.get('broadcasts_total', 0)}
 • Завершенных: {broadcast_stats.get('completed', 0)}
 • Отправлено сообщений: {broadcast_stats.get('total_sent', 0)}
 
@@ -1810,29 +1827,28 @@ async def cmd_stats(message: Message, db: UniversalDatabase):
 
 @router.message(Command("payment_stats"))
 async def cmd_payment_stats(message: Message, db: UniversalDatabase):
-    """Команда статистики платежей (только для админов)"""
+    """
+    Команда статистики платежей (только для админов)
+    ИСПРАВЛЕНО: Использует новый StatisticsService
+    """
     if not await is_admin(message.from_user.id, db):
         await message.answer("❌ У вас нет прав для выполнения этой команды.")
         return
 
     try:
-        # Создаем сервис платежей
-        payment_service = create_payment_service(
-            provider_token=YOOKASSA_PROVIDER_TOKEN,
-            currency=YOOKASSA_CURRENCY,
-            provider_data=YOOKASSA_PROVIDER_DATA,
-            db=db
-        )
+        from services import get_statistics_service
+        stats_service = get_statistics_service()
 
-        # Получаем статистику
-        stats = await payment_service.get_payment_statistics()
+        # Получаем статистику платежей
+        stats = await stats_service.get_payment_statistics()
 
         if not stats:
             await message.answer("❌ Не удалось получить статистику платежей.")
             return
 
-        # Форматируем статистику
-        mode = "🧪 ТЕСТОВЫЙ" if payment_service.is_test_mode else "🔴 ПРОДАКШН"
+        # Определяем режим работы
+        from config import YOOKASSA_MODE
+        mode = "🧪 ТЕСТОВЫЙ" if YOOKASSA_MODE == "TEST" else "🔴 ПРОДАКШН"
 
         stats_text = f"""
 📊 <b>Статистика платежей ЮKassa</b>
@@ -1862,6 +1878,62 @@ async def cmd_payment_stats(message: Message, db: UniversalDatabase):
     except Exception as e:
         logger.error(f"Ошибка при получении статистики платежей: {e}")
         await message.answer("❌ Произошла ошибка при получении статистики.")
+
+
+@router.message(Command("health"))
+async def cmd_health_check(message: Message, db: UniversalDatabase):
+    """
+    Команда проверки здоровья системы (только для админов)
+    """
+    if not await is_admin(message.from_user.id, db):
+        await message.answer("❌ У вас нет прав для выполнения этой команды.")
+        return
+
+    try:
+        from services import get_statistics_service
+        from services.statistics_monitor import StatisticsMonitor
+
+        stats_service = get_statistics_service()
+        monitor = StatisticsMonitor(stats_service)
+
+        # Выполняем проверку здоровья
+        health = await monitor.perform_health_check()
+
+        # Определяем эмодзи для статуса
+        status_emoji = {
+            'healthy': '✅',
+            'warning': '⚠️',
+            'critical': '❌'
+        }
+
+        health_text = f"""
+🏥 <b>Проверка здоровья системы</b>
+
+📊 <b>Общий статус:</b> {status_emoji.get(health.status, '❓')} {health.status.upper()}
+🗄️ <b>База данных:</b> {status_emoji.get(health.database_status, '❓')} {health.database_status}
+💾 <b>Кеш:</b> {status_emoji.get(health.cache_status, '❓')} {health.cache_status}
+🔍 <b>Целостность данных:</b> {status_emoji.get(health.data_integrity, '❓')} {health.data_integrity}
+⚡ <b>Производительность:</b> {health.performance_score:.1f}/100
+
+🕐 <b>Проверено:</b> {health.checked_at.strftime('%H:%M:%S')}
+        """
+
+        if health.issues:
+            health_text += f"\n\n⚠️ <b>Обнаруженные проблемы:</b>\n"
+            for issue in health.issues[:5]:  # Показываем только первые 5
+                health_text += f"• {issue}\n"
+
+        if health.recommendations:
+            health_text += f"\n💡 <b>Рекомендации:</b>\n"
+            for rec in health.recommendations[:3]:  # Показываем только первые 3
+                health_text += f"• {rec}\n"
+
+        await message.answer(health_text.strip(), parse_mode="HTML")
+        logger.info(f"Админ {message.from_user.id} запросил health check")
+
+    except Exception as e:
+        logger.error(f"Ошибка при выполнении health check: {e}")
+        await message.answer("❌ Произошла ошибка при проверке здоровья системы.")
 
 
 @router.callback_query(F.data == "payment_stats")

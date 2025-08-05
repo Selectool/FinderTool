@@ -22,68 +22,152 @@ async def get_dashboard_stats(
     current_user = Depends(RequireStatisticsView),
     db: UniversalDatabase = Depends(get_db)
 ) -> Dict[str, Any]:
-    """Получить статистику для dashboard"""
+    """
+    Получить статистику для dashboard
+    ИСПРАВЛЕНО: Использует новый StatisticsService
+    """
+    try:
+        from services import get_statistics_service, is_statistics_service_initialized, init_statistics_service
 
-    # Получаем детальную статистику
-    stats = await db.get_detailed_stats()
+        # Инициализируем сервис статистики если не инициализирован
+        if not is_statistics_service_initialized():
+            init_statistics_service(db)
 
-    # Получаем данные для графиков активности
-    activity_data = await db.get_user_activity_chart_data(days=30)
+        stats_service = get_statistics_service()
 
-    # Обрабатываем данные активности для графиков
-    chart_data = process_activity_data(activity_data)
+        # Получаем детальную статистику
+        stats = await stats_service.get_detailed_statistics()
 
-    # Вычисляем дополнительные метрики
-    user_stats = stats["users"]
-    request_stats = stats["requests"]
-    broadcast_stats = stats["broadcasts"]
+        if not stats:
+            # Возвращаем пустую статистику при ошибке
+            return {
+                "summary": {
+                    "total_users": 0,
+                    "active_subscriptions": 0,
+                    "search_requests": 0,
+                    "monthly_revenue": 0,
+                    "today_users": 0,
+                    "today_searches": 0,
+                    "today_subscriptions": 0,
+                    "today_revenue": 0,
+                    "conversion_rate": 0.0,
+                    "avg_requests_per_user": 0.0,
+                    "broadcast_success_rate": 0.0
+                },
+                "charts": {
+                    "user_growth": [],
+                    "request_activity": [],
+                    "daily_stats": []
+                },
+                "top_users": [],
+                "recent_activity": [],
+                "system_health": {"status": "error"},
+                "generated_at": datetime.now().isoformat()
+            }
 
-    # Конверсия в подписчики
-    conversion_rate = 0.0
-    if user_stats.get("total", 0) > 0:
-        conversion_rate = round((user_stats.get("subscribed", 0) / user_stats["total"]) * 100, 2)
+        # Получаем данные для графиков активности (пока используем старый метод)
+        try:
+            activity_data = await db.get_user_activity_chart_data(days=30)
+            chart_data = process_activity_data(activity_data)
+        except:
+            chart_data = {
+                "user_growth": [],
+                "request_activity": [],
+                "daily_stats": []
+            }
 
-    # Средние запросы на пользователя
-    avg_requests_per_user = 0.0
-    if user_stats.get("total", 0) > 0:
-        avg_requests_per_user = round(request_stats.get("total", 0) / user_stats["total"], 2)
+        # Вычисляем дополнительные метрики
+        total_users = stats.get("total_users", 0)
+        active_subscribers = stats.get("active_subscribers", 0)
+        total_requests = stats.get("total_requests", 0)
 
-    # Эффективность рассылок
-    broadcast_success_rate = 0.0
-    total_sent = broadcast_stats.get("total_sent", 0) or 0
-    total_failed = broadcast_stats.get("total_failed", 0) or 0
-    if total_sent + total_failed > 0:
-        broadcast_success_rate = round((total_sent / (total_sent + total_failed)) * 100, 2)
+        # Конверсия в подписчики
+        conversion_rate = 0.0
+        if total_users > 0:
+            conversion_rate = round((active_subscribers / total_users) * 100, 2)
 
-    return {
-        "overview": {
-            "total_users": user_stats.get("total", 0),
-            "active_subscribers": user_stats.get("subscribed", 0),
-            "unlimited_users": user_stats.get("unlimited", 0),
-            "blocked_users": user_stats.get("blocked", 0),
-            "new_users_today": user_stats.get("new_today", 0),
-            "new_users_week": user_stats.get("new_week", 0),
-            "new_users_month": user_stats.get("new_month", 0),
-            "total_requests": request_stats.get("total", 0),
-            "requests_today": request_stats.get("requests_today", 0),
-            "requests_week": request_stats.get("requests_week", 0),
-            "requests_month": request_stats.get("requests_month", 0),
-            "total_broadcasts": broadcast_stats.get("total", 0),
-            "completed_broadcasts": broadcast_stats.get("completed", 0),
-            "conversion_rate": conversion_rate,
-            "avg_requests_per_user": avg_requests_per_user,
-            "broadcast_success_rate": broadcast_success_rate
-        },
-        "charts": {
-            "user_growth": chart_data["user_growth"],
-            "request_activity": chart_data["request_activity"],
-            "daily_stats": chart_data["daily_stats"]
-        },
-        "top_users": stats.get("top_users", []),
-        "recent_activity": await get_recent_activity(db),
-        "system_health": await get_system_health(db),
-        "generated_at": datetime.now().isoformat()
-    }
+        # Средние запросы на пользователя
+        avg_requests_per_user = 0.0
+        if total_users > 0:
+            avg_requests_per_user = round(total_requests / total_users, 2)
+
+        # Эффективность рассылок
+        broadcast_success_rate = 0.0
+        total_sent = stats.get("broadcasts_sent", 0) or 0
+        total_failed = stats.get("broadcasts_failed", 0) or 0
+        if total_sent + total_failed > 0:
+            broadcast_success_rate = round((total_sent / (total_sent + total_failed)) * 100, 2)
+
+        return {
+            "summary": {
+                "total_users": total_users,
+                "active_subscriptions": active_subscribers,
+                "search_requests": total_requests,
+                "monthly_revenue": stats.get("revenue_month", 0),
+                "today_users": stats.get("new_users_today", 0),
+                "today_searches": stats.get("requests_today", 0),
+                "today_subscriptions": stats.get("successful_payments_today", 0),
+                "today_revenue": stats.get("revenue_today", 0),
+                "conversion_rate": conversion_rate,
+                "avg_requests_per_user": avg_requests_per_user,
+                "broadcast_success_rate": broadcast_success_rate
+            },
+            "overview": {
+                "total_users": total_users,
+                "active_subscribers": active_subscribers,
+                "unlimited_users": stats.get("unlimited_users", 0),
+                "blocked_users": stats.get("blocked_users", 0),
+                "new_users_today": stats.get("new_users_today", 0),
+                "new_users_week": stats.get("new_users_week", 0),
+                "new_users_month": stats.get("new_users_month", 0),
+                "total_requests": total_requests,
+                "requests_today": stats.get("requests_today", 0),
+                "requests_week": stats.get("requests_week", 0),
+                "requests_month": stats.get("requests_month", 0),
+                "total_broadcasts": stats.get("broadcasts_total", 0),
+                "completed_broadcasts": stats.get("broadcasts_completed", 0),
+                "conversion_rate": conversion_rate,
+                "avg_requests_per_user": avg_requests_per_user,
+                "broadcast_success_rate": broadcast_success_rate
+            },
+            "charts": {
+                "user_growth": chart_data["user_growth"],
+                "request_activity": chart_data["request_activity"],
+                "daily_stats": chart_data["daily_stats"]
+            },
+            "top_users": stats.get("top_users", []),
+            "recent_activity": await get_recent_activity(db),
+            "system_health": await get_system_health(db),
+            "generated_at": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Ошибка получения статистики dashboard: {e}")
+        # Возвращаем пустую статистику при ошибке
+        return {
+            "summary": {
+                "total_users": 0,
+                "active_subscriptions": 0,
+                "search_requests": 0,
+                "monthly_revenue": 0,
+                "today_users": 0,
+                "today_searches": 0,
+                "today_subscriptions": 0,
+                "today_revenue": 0,
+                "conversion_rate": 0.0,
+                "avg_requests_per_user": 0.0,
+                "broadcast_success_rate": 0.0
+            },
+            "charts": {
+                "user_growth": [],
+                "request_activity": [],
+                "daily_stats": []
+            },
+            "top_users": [],
+            "recent_activity": [],
+            "system_health": {"status": "error", "error": str(e)},
+            "generated_at": datetime.now().isoformat()
+        }
 
 
 def process_activity_data(activity_data: List[Dict]) -> Dict[str, Any]:
