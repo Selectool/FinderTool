@@ -14,17 +14,17 @@ def find_working_postgres_host():
     """Поиск рабочего PostgreSQL хоста"""
     print("🔍 Поиск рабочего PostgreSQL хоста...")
     
-    # Возможные имена хостов в Dokploy
+    # Возможные имена хостов в Dokploy (в порядке приоритета)
     possible_hosts = [
+        'findertool-db',  # НАИБОЛЕЕ ВЕРОЯТНЫЙ - видно в Dokploy UI
         'postgres',
-        'postgresql', 
+        'postgresql',
         'db',
         'database',
         'localhost',
         '127.0.0.1',
         'postgres-inGABWIP0OB6grXZXTORS',  # По ID сервиса
-        'findertool-postgres',
-        'findertool-db'
+        'findertool-postgres'
     ]
     
     # Учетные данные из переменных окружения
