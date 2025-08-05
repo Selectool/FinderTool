@@ -12,8 +12,18 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from database.universal_database import UniversalDatabase
 
-# Получаем переменную окружения
-ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+# Безопасное получение переменной окружения
+try:
+    ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+except Exception:
+    ENVIRONMENT = "production"
+
+def get_environment():
+    """Получить переменную окружения с fallback"""
+    try:
+        return os.getenv("ENVIRONMENT", "production")
+    except Exception:
+        return "production"
 
 logger = logging.getLogger(__name__)
 
