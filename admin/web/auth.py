@@ -64,7 +64,8 @@ async def login_submit(
 
         # Определяем настройки безопасности для cookies
         is_production = os.getenv("ENVIRONMENT") == "production"
-        secure_cookies = is_production
+        # Временно отключаем secure для отладки (в production должно быть True для HTTPS)
+        secure_cookies = False  # is_production
 
         # Создаем ответ с редиректом
         redirect_response = RedirectResponse(url="/dashboard", status_code=302)
@@ -222,13 +223,15 @@ async def token_login(token: str = Query(...), request: Request = None):
         # Создаем response с редиректом на дашборд
         response = RedirectResponse(url="/dashboard", status_code=302)
 
-        # Устанавливаем secure cookies
+        # Устанавливаем secure cookies (временно отключаем secure для отладки)
+        secure_setting = False  # True if os.getenv('ENVIRONMENT') == 'production' else False
+
         response.set_cookie(
             key="access_token",
             value=access_token,
             max_age=3600,  # 1 час
             httponly=True,
-            secure=True if os.getenv('ENVIRONMENT') == 'production' else False,
+            secure=secure_setting,
             samesite="lax"
         )
 
@@ -237,7 +240,7 @@ async def token_login(token: str = Query(...), request: Request = None):
             value=refresh_token,
             max_age=2592000,  # 30 дней
             httponly=True,
-            secure=True if os.getenv('ENVIRONMENT') == 'production' else False,
+            secure=secure_setting,
             samesite="lax"
         )
 
@@ -246,7 +249,7 @@ async def token_login(token: str = Query(...), request: Request = None):
             value=csrf_token,
             max_age=3600,  # 1 час
             httponly=False,  # Нужен для JavaScript
-            secure=True if os.getenv('ENVIRONMENT') == 'production' else False,
+            secure=secure_setting,
             samesite="lax"
         )
 
@@ -256,7 +259,7 @@ async def token_login(token: str = Query(...), request: Request = None):
             value=access_token,
             max_age=3600,  # 1 час
             httponly=False,  # JavaScript может читать
-            secure=True if os.getenv('ENVIRONMENT') == 'production' else False,
+            secure=secure_setting,
             samesite="lax"
         )
 
