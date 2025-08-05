@@ -282,9 +282,9 @@ app.include_router(payment_cleanup.router, tags=["payment-cleanup"])
 
 # Веб-страницы
 try:
-    from .web import auth as web_auth, dashboard, users as web_users, broadcasts as web_broadcasts, payment_cleanup as web_payment_cleanup
+    from .web import auth as web_auth, dashboard, users as web_users, broadcasts as web_broadcasts, payment_cleanup as web_payment_cleanup, statistics as web_statistics
 except ImportError:
-    from admin.web import auth as web_auth, dashboard, users as web_users, broadcasts as web_broadcasts, payment_cleanup as web_payment_cleanup
+    from admin.web import auth as web_auth, dashboard, users as web_users, broadcasts as web_broadcasts, payment_cleanup as web_payment_cleanup, statistics as web_statistics
 
 # Добавляем метод get_user_permissions в класс UniversalDatabase
 add_get_user_permissions_method()
@@ -294,6 +294,7 @@ app.include_router(dashboard.router, prefix="/dashboard", tags=["web-dashboard"]
 app.include_router(web_users.router, prefix="/users", tags=["web-users"])
 app.include_router(web_broadcasts.router, prefix="/broadcasts", tags=["web-broadcasts"])
 app.include_router(web_payment_cleanup.router, prefix="/payment-cleanup", tags=["web-payment-cleanup"])
+app.include_router(web_statistics.router, prefix="/statistics", tags=["web-statistics"])
 
 
 # Информация о приложении (только для авторизованных пользователей)

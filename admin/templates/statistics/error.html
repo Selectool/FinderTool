@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Ошибка статистики{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        Ошибка загрузки статистики
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="text-center mb-4">
+                        <i class="fas fa-chart-line fa-5x text-muted mb-3"></i>
+                        <h4 class="text-danger">{{ error.message }}</h4>
+                        <p class="text-muted">Произошла ошибка при загрузке данных статистики</p>
+                    </div>
+                    
+                    <div class="alert alert-warning">
+                        <h6><i class="fas fa-info-circle me-2"></i>Детали ошибки:</h6>
+                        <code>{{ error.details }}</code>
+                    </div>
+                    
+                    <div class="row text-center">
+                        <div class="col-md-4">
+                            <button class="btn btn-primary btn-lg" onclick="window.location.reload()">
+                                <i class="fas fa-sync-alt me-2"></i>
+                                Попробовать снова
+                            </button>
+                        </div>
+                        <div class="col-md-4">
+                            <a href="/dashboard" class="btn btn-secondary btn-lg">
+                                <i class="fas fa-home me-2"></i>
+                                На главную
+                            </a>
+                        </div>
+                        <div class="col-md-4">
+                            <button class="btn btn-info btn-lg" onclick="checkSystemStatus()">
+                                <i class="fas fa-heartbeat me-2"></i>
+                                Проверить систему
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <hr>
+                    
+                    <div class="small text-muted">
+                        <strong>Время ошибки:</strong> {{ error.timestamp }}<br>
+                        <strong>Пользователь:</strong> {{ current_user.username }}<br>
+                        <strong>Страница:</strong> Статистика
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function checkSystemStatus() {
+    try {
+        const response = await fetch('/api/health');
+        const result = await response.json();
+        
+        if (result.status === 'healthy') {
+            alert('Система работает нормально. Попробуйте обновить страницу.');
+        } else {
+            alert('Обнаружены проблемы с системой: ' + JSON.stringify(result));
+        }
+    } catch (error) {
+        alert('Не удалось проверить статус системы: ' + error.message);
+    }
+}
+</script>
+{% endblock %}
