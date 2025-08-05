@@ -1,10 +1,17 @@
-/* Базовые стили админ-панели - Современная цветовая схема */
+/* Production-ready базовые стили админ-панели с современной типографикой */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
 body {
-	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+	font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
 		'Helvetica Neue', Arial, sans-serif;
 	background-color: #f8fafc;
 	color: #334155;
 	line-height: 1.6;
+	font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+	font-variant-numeric: oldstyle-nums;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	text-rendering: optimizeLegibility;
 }
 
 .sidebar {
@@ -33,23 +40,100 @@ body {
 }
 
 .btn-primary {
+	font-family: 'Inter', sans-serif;
 	background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 	border: none;
 	border-radius: 8px;
-	padding: 8px 16px;
-	font-weight: 500;
-	transition: all 0.3s ease;
+	padding: 10px 20px;
+	font-weight: 600;
+	font-size: 0.875rem;
+	letter-spacing: 0.025em;
+	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
 }
 
 .btn-primary:hover {
 	background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
-	transform: translateY(-1px);
-	box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+	transform: translateY(-2px);
+	box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+}
+
+/* Улучшенные стили для всех кнопок */
+.btn {
+	font-family: 'Inter', sans-serif;
+	font-weight: 500;
+	letter-spacing: 0.025em;
+	border-radius: 8px;
+	transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+.btn:focus {
+	box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+/* Production-ready типографика */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+	font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+		sans-serif;
+	font-weight: 600;
+	line-height: 1.2;
+	letter-spacing: -0.025em;
+	color: #1e293b;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+h1 {
+	font-size: 2.25rem;
+	font-weight: 700;
+}
+h2 {
+	font-size: 1.875rem;
+	font-weight: 600;
+}
+h3 {
+	font-size: 1.5rem;
+	font-weight: 600;
+}
+h4 {
+	font-size: 1.25rem;
+	font-weight: 600;
+}
+h5 {
+	font-size: 1.125rem;
+	font-weight: 600;
+}
+h6 {
+	font-size: 1rem;
+	font-weight: 600;
+}
+
+p,
+span,
+div,
+td,
+th {
+	font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+		sans-serif;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
 }
 
 .navbar-brand {
-	font-weight: 600;
+	font-family: 'Inter', sans-serif;
+	font-weight: 700;
+	font-size: 1.25rem;
 	color: #1e293b;
+	letter-spacing: -0.025em;
 }
 
 /* Production-ready статистические карточки с WCAG AA соответствием */
@@ -173,22 +257,27 @@ body {
 }
 
 .stats-card h5 {
+	font-family: 'Inter', sans-serif;
 	font-size: 2.75rem;
 	font-weight: 800;
 	margin-bottom: 0.75rem;
 	line-height: 0.9;
+	letter-spacing: -0.02em;
+	font-feature-settings: 'tnum', 'lnum';
 	text-rendering: optimizeLegibility;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
 }
 
 .stats-card p {
+	font-family: 'Inter', sans-serif;
 	font-size: 1rem;
 	margin-bottom: 0;
 	opacity: 1;
 	font-weight: 600;
 	text-transform: uppercase;
-	letter-spacing: 1px;
+	letter-spacing: 0.05em;
+	font-feature-settings: 'case';
 	text-rendering: optimizeLegibility;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
@@ -617,6 +706,57 @@ body {
 	content: '\f2ed'; /* fa-trash */
 }
 
+/* Production-ready стили для таблиц */
+.table {
+	font-family: 'Inter', sans-serif;
+	font-size: 0.875rem;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+.table th {
+	font-weight: 600;
+	letter-spacing: 0.025em;
+	text-transform: uppercase;
+	font-size: 0.75rem;
+	color: #64748b;
+	border-bottom: 2px solid #e2e8f0;
+}
+
+.table td {
+	font-weight: 400;
+	color: #334155;
+	vertical-align: middle;
+}
+
+/* Production-ready стили для форм */
+.form-control,
+.form-select {
+	font-family: 'Inter', sans-serif;
+	font-size: 0.875rem;
+	font-weight: 400;
+	border: 1px solid #d1d5db;
+	border-radius: 8px;
+	padding: 10px 12px;
+	transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+.form-control:focus,
+.form-select:focus {
+	border-color: #667eea;
+	box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-label {
+	font-family: 'Inter', sans-serif;
+	font-weight: 500;
+	font-size: 0.875rem;
+	color: #374151;
+	margin-bottom: 0.5rem;
+}
+
 /* Responsive улучшения */
 @media (max-width: 768px) {
 	.main-content {
@@ -624,7 +764,7 @@ body {
 	}
 
 	.stats-card h5 {
-		font-size: 1.25rem;
+		font-size: 1.75rem;
 	}
 
 	.table-responsive {
@@ -632,7 +772,17 @@ body {
 	}
 
 	.btn-group-sm .btn {
-		padding: 4px 8px;
+		padding: 6px 12px;
 		font-size: 0.75rem;
+	}
+
+	h1 {
+		font-size: 1.875rem;
+	}
+	h2 {
+		font-size: 1.5rem;
+	}
+	h3 {
+		font-size: 1.25rem;
 	}
 }
